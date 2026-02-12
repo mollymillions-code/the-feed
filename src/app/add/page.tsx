@@ -194,7 +194,6 @@ function ImageMode({ onAdded }: { onAdded: () => void }) {
         ref={fileRef}
         type="file"
         accept="image/*"
-        capture="environment"
         onChange={handleFileChange}
         className="hidden"
         id="image-input"
