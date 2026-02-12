@@ -7,10 +7,11 @@ import CardActions from "./CardActions";
 interface ImageCardProps {
   link: FeedLink;
   onDelete: (id: string) => void;
+  onLike: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function ImageCard({ link, onDelete, onOpen }: ImageCardProps) {
+export default function ImageCard({ link, onDelete, onLike, onOpen }: ImageCardProps) {
   const imageSrc = link.imageData || link.thumbnail;
 
   return (
@@ -62,7 +63,7 @@ export default function ImageCard({ link, onDelete, onOpen }: ImageCardProps) {
         </div>
       )}
 
-      <CardActions linkId={link.id} onDelete={onDelete} />
+      <CardActions linkId={link.id} liked={!!link.likedAt} onLike={onLike} onDelete={onDelete} />
     </div>
   );
 }

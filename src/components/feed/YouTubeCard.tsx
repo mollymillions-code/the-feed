@@ -19,10 +19,11 @@ function getYouTubeId(url: string): string | null {
 interface YouTubeCardProps {
   link: FeedLink;
   onDelete: (id: string) => void;
+  onLike: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function YouTubeCard({ link, onDelete, onOpen }: YouTubeCardProps) {
+export default function YouTubeCard({ link, onDelete, onLike, onOpen }: YouTubeCardProps) {
   const videoId = link.url ? getYouTubeId(link.url) : null;
 
   return (
@@ -75,7 +76,7 @@ export default function YouTubeCard({ link, onDelete, onOpen }: YouTubeCardProps
         </div>
       )}
 
-      <CardActions linkId={link.id} onDelete={onDelete} />
+      <CardActions linkId={link.id} liked={!!link.likedAt} onLike={onLike} onDelete={onDelete} />
     </div>
   );
 }

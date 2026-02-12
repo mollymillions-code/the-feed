@@ -7,10 +7,11 @@ import CardActions from "./CardActions";
 interface GenericCardProps {
   link: FeedLink;
   onDelete: (id: string) => void;
+  onLike: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function GenericCard({ link, onDelete, onOpen }: GenericCardProps) {
+export default function GenericCard({ link, onDelete, onLike, onOpen }: GenericCardProps) {
   return (
     <div className="flex flex-col items-center justify-center h-full px-5 gap-4">
       <div className="w-full max-w-[400px] rounded-2.5xl overflow-hidden card-glass p-6 flex flex-col items-center gap-4">
@@ -79,7 +80,7 @@ export default function GenericCard({ link, onDelete, onOpen }: GenericCardProps
         </div>
       )}
 
-      <CardActions linkId={link.id} onDelete={onDelete} />
+      <CardActions linkId={link.id} liked={!!link.likedAt} onLike={onLike} onDelete={onDelete} />
     </div>
   );
 }

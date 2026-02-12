@@ -12,10 +12,11 @@ function getTweetId(url: string): string | null {
 interface TweetCardProps {
   link: FeedLink;
   onDelete: (id: string) => void;
+  onLike: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function TweetCard({ link, onDelete, onOpen }: TweetCardProps) {
+export default function TweetCard({ link, onDelete, onLike, onOpen }: TweetCardProps) {
   const tweetId = link.url ? getTweetId(link.url) : null;
 
   return (
@@ -100,7 +101,7 @@ export default function TweetCard({ link, onDelete, onOpen }: TweetCardProps) {
         </div>
       )}
 
-      <CardActions linkId={link.id} onDelete={onDelete} />
+      <CardActions linkId={link.id} liked={!!link.likedAt} onLike={onLike} onDelete={onDelete} />
     </div>
   );
 }

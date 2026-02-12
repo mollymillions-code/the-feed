@@ -47,7 +47,10 @@ export default function FeedPage() {
     };
   }, [flushEngagements]);
 
-  const fetchFeed = useCallback(async (category: string) => {
+  // Track whether we've done the initial load vs appending more cards
+  const hasLoadedRef = useRef(false);
+
+  const fetchFeed = useCallback(async (category: string, append = false) => {
     try {
       const params = new URLSearchParams({
         category,
@@ -60,12 +63,23 @@ export default function FeedPage() {
 
       const res = await fetch(`/api/feed?${params}`);
       const data = await res.json();
-      setLinks(data.links);
+
+      if (append) {
+        // Append new cards, deduplicating by ID — preserves existing deck order
+        setLinks((prev) => {
+          const existingIds = new Set(prev.map((l) => l.id));
+          const newLinks = data.links.filter((l: FeedLink) => !existingIds.has(l.id));
+          return [...prev, ...newLinks];
+        });
+      } else {
+        setLinks(data.links);
+      }
       setCategories(data.categories);
     } catch (err) {
       console.error("Failed to fetch feed:", err);
     } finally {
       setLoading(false);
+      hasLoadedRef.current = true;
     }
   }, []);
 
@@ -76,10 +90,30 @@ export default function FeedPage() {
   function handleCategorySelect(category: string) {
     setActiveCategory(category);
     setLoading(true);
+    hasLoadedRef.current = false;
   }
 
   function handleDelete(id: string) {
     setLinks((prev) => prev.filter((l) => l.id !== id));
+  }
+
+  function handleLike(id: string) {
+    // Optimistic toggle
+    setLinks((prev) =>
+      prev.map((l) =>
+        l.id === id
+          ? { ...l, likedAt: l.likedAt ? null : new Date().toISOString() }
+          : l
+      )
+    );
+
+    // Persist to server
+    const link = links.find((l) => l.id === id);
+    fetch(`/api/links/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ liked: !link?.likedAt }),
+    }).catch(() => {});
   }
 
   // The core behavioral signal handler — every interaction flows through here
@@ -130,8 +164,8 @@ export default function FeedPage() {
   );
 
   function handleNearEnd() {
-    // Re-fetch with updated session context for the next batch
-    fetchFeed(activeCategory);
+    // Append new cards — preserves existing deck so back-swiping works
+    fetchFeed(activeCategory, true);
   }
 
   return (
@@ -165,6 +199,7 @@ export default function FeedPage() {
           <FeedSwiper
             links={links}
             onDelete={handleDelete}
+            onLike={handleLike}
             onEngagement={handleEngagement}
             onNearEnd={handleNearEnd}
             sessionId={sessionId}

@@ -7,10 +7,11 @@ import CardActions from "./CardActions";
 interface TextCardProps {
   link: FeedLink;
   onDelete: (id: string) => void;
+  onLike: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function TextCard({ link, onDelete, onOpen }: TextCardProps) {
+export default function TextCard({ link, onDelete, onLike, onOpen }: TextCardProps) {
   return (
     <div
       className="flex flex-col items-center justify-center h-full px-5 gap-4"
@@ -53,7 +54,7 @@ export default function TextCard({ link, onDelete, onOpen }: TextCardProps) {
         </div>
       )}
 
-      <CardActions linkId={link.id} onDelete={onDelete} />
+      <CardActions linkId={link.id} liked={!!link.likedAt} onLike={onLike} onDelete={onDelete} />
     </div>
   );
 }

@@ -1,7 +1,16 @@
 import { pgTable, text, timestamp, integer, jsonb, real } from "drizzle-orm/pg-core";
 
+export const users = pgTable("users", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  name: text("name"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const links = pgTable("links", {
   id: text("id").primaryKey(),
+  userId: text("user_id").default("").notNull(),
   url: text("url"),                           // nullable — images/text don't have URLs
   title: text("title"),
   description: text("description"),
@@ -26,6 +35,8 @@ export const links = pgTable("links", {
   avgDwellMs: integer("avg_dwell_ms").default(0).notNull(),
   // Number of times user opened the actual content
   openCount: integer("open_count").default(0).notNull(),
+  // Like/heart
+  likedAt: timestamp("liked_at", { withTimezone: true }),
 });
 
 /**
@@ -40,6 +51,7 @@ export const links = pgTable("links", {
  */
 export const engagements = pgTable("engagements", {
   id: text("id").primaryKey(),
+  userId: text("user_id").default("").notNull(),
   linkId: text("link_id").notNull(),
   eventType: text("event_type").notNull(), // 'impression' | 'dwell' | 'open' | 'done'
   dwellTimeMs: integer("dwell_time_ms"),   // how long user stayed on card
@@ -61,6 +73,7 @@ export const engagements = pgTable("engagements", {
  */
 export const timePreferences = pgTable("time_preferences", {
   id: text("id").primaryKey(),
+  userId: text("user_id").default("").notNull(),
   hourSlot: integer("hour_slot").notNull(),   // 0-23
   dayType: text("day_type").notNull(),        // 'weekday' | 'weekend'
   category: text("category").notNull(),

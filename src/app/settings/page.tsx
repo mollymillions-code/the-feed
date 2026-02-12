@@ -12,6 +12,7 @@ interface Stats {
 
 export default function SettingsPage() {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchStats() {
@@ -23,8 +24,23 @@ export default function SettingsPage() {
         // ignore
       }
     }
+    async function fetchUser() {
+      try {
+        const res = await fetch("/api/auth/me");
+        const data = await res.json();
+        setUserEmail(data.user?.email || null);
+      } catch {
+        // ignore
+      }
+    }
     fetchStats();
+    fetchUser();
   }, []);
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
 
   async function handleExport() {
     try {
@@ -131,6 +147,34 @@ export default function SettingsPage() {
                 <span className="text-[14px] tracking-wide">Export all links</span>
               </div>
               <span className="text-feed-accent text-[12px] font-semibold tracking-wider uppercase group-hover:translate-x-0.5 transition-transform">JSON</span>
+            </button>
+          </div>
+        </section>
+
+        {/* Account section */}
+        <section className="mb-8">
+          <h2 className="text-feed-dim text-[11px] font-semibold uppercase tracking-wider mb-3">
+            Account
+          </h2>
+          <div className="card-glass rounded-2.5xl divide-y divide-white/[0.04]">
+            <div className="flex items-center justify-between px-5 py-4">
+              <span className="text-[14px] text-feed-muted tracking-wide">Email</span>
+              <span className="text-[14px] font-semibold truncate ml-4">
+                {userEmail ?? (
+                  <span className="inline-block w-24 h-4 rounded bg-white/[0.04] animate-pulse" />
+                )}
+              </span>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-5 py-4 text-left group active:scale-[0.99] transition-transform"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-red-400/70">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              <span className="text-[14px] text-red-400/90 tracking-wide">Sign out</span>
             </button>
           </div>
         </section>

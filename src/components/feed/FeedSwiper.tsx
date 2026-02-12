@@ -12,6 +12,7 @@ const FAST_SWIPE_MS = 1500;    // <1.5s = "skipped"
 interface FeedSwiperProps {
   links: FeedLink[];
   onDelete: (id: string) => void;
+  onLike: (id: string) => void;
   onEngagement: (event: EngagementEvent) => void;
   onNearEnd: () => void;
   sessionId: string;
@@ -29,12 +30,16 @@ export interface EngagementEvent {
 export default function FeedSwiper({
   links,
   onDelete,
+  onLike,
   onEngagement,
   onNearEnd,
   sessionId,
 }: FeedSwiperProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [direction, setDirection] = useState(0);
+
+  // Guard against double-swipe during animation
+  const isAnimating = useRef(false);
 
   // Behavioral tracking refs
   const cardStartTime = useRef<number>(Date.now());
@@ -79,7 +84,9 @@ export default function FeedSwiper({
 
   const goNext = useCallback(
     (velocity?: number) => {
+      if (isAnimating.current) return;
       if (currentIndex < links.length - 1) {
+        isAnimating.current = true;
         logDwell(velocity);
         setDirection(1);
         setCurrentIndex((prev) => {
@@ -87,6 +94,7 @@ export default function FeedSwiper({
           if (next >= links.length - 5) onNearEnd();
           return next;
         });
+        setTimeout(() => { isAnimating.current = false; }, 350);
       }
     },
     [currentIndex, links.length, logDwell, onNearEnd]
@@ -94,16 +102,21 @@ export default function FeedSwiper({
 
   const goPrev = useCallback(
     (velocity?: number) => {
+      if (isAnimating.current) return;
       if (currentIndex > 0) {
+        isAnimating.current = true;
         logDwell(velocity);
         setDirection(-1);
         setCurrentIndex((prev) => prev - 1);
+        setTimeout(() => { isAnimating.current = false; }, 350);
       }
     },
     [currentIndex, logDwell]
   );
 
   function handleDragEnd(_: unknown, info: PanInfo) {
+    if (isAnimating.current) return;
+
     const { offset, velocity } = info;
 
     // Compute swipe velocity in px/ms (higher = faster swipe)
@@ -192,6 +205,7 @@ export default function FeedSwiper({
           <FeedCard
             link={currentLink}
             onDelete={handleDelete}
+            onLike={onLike}
             onOpen={handleOpen}
           />
         </motion.div>

@@ -7,10 +7,11 @@ import CardActions from "./CardActions";
 interface ArticleCardProps {
   link: FeedLink;
   onDelete: (id: string) => void;
+  onLike: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function ArticleCard({ link, onDelete, onOpen }: ArticleCardProps) {
+export default function ArticleCard({ link, onDelete, onLike, onOpen }: ArticleCardProps) {
   return (
     <div className="flex flex-col items-center justify-center h-full px-5 gap-4">
       {/* Article Card */}
@@ -79,7 +80,7 @@ export default function ArticleCard({ link, onDelete, onOpen }: ArticleCardProps
         </div>
       )}
 
-      <CardActions linkId={link.id} onDelete={onDelete} />
+      <CardActions linkId={link.id} liked={!!link.likedAt} onLike={onLike} onDelete={onDelete} />
     </div>
   );
 }

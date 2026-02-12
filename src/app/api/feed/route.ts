@@ -5,9 +5,12 @@ import { eq, and } from "drizzle-orm";
 import { scoreFeedLinks, SessionContext, TimePreference } from "@/lib/feed-algorithm";
 import { FeedLink } from "@/types";
 import { decodeEntities } from "@/lib/utils";
+import { getSession } from "@/lib/auth";
 
 // GET /api/feed — get smart-ordered feed with full recommendation engine
 export async function GET(request: NextRequest) {
+  const authSession = await getSession();
+  const userId = authSession.userId!;
   const category = request.nextUrl.searchParams.get("category") || "All";
   const limit = parseInt(request.nextUrl.searchParams.get("limit") || "20");
 
@@ -17,11 +20,11 @@ export async function GET(request: NextRequest) {
   const skippedCats = request.nextUrl.searchParams.get("skippedCats")?.split(",").filter(Boolean) || [];
   const cardsShown = parseInt(request.nextUrl.searchParams.get("cardsShown") || "0");
 
-  // Fetch active links
+  // Fetch active links for this user
   const allLinks = await db
     .select()
     .from(links)
-    .where(eq(links.status, "active"));
+    .where(and(eq(links.status, "active"), eq(links.userId, userId)));
 
   // Filter by category if not "All"
   let filtered = allLinks;
@@ -54,7 +57,8 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           eq(timePreferences.hourSlot, hourSlot),
-          eq(timePreferences.dayType, dayType)
+          eq(timePreferences.dayType, dayType),
+          eq(timePreferences.userId, userId)
         )
       );
 
@@ -94,6 +98,7 @@ export async function GET(request: NextRequest) {
     engagementScore: link.engagementScore,
     avgDwellMs: link.avgDwellMs,
     openCount: link.openCount,
+    likedAt: link.likedAt?.toISOString() || null,
   }));
 
   // Score with full 4-level algorithm

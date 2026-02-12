@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { links } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { getSession } from "@/lib/auth";
 
 // PATCH /api/links/[id] — update a link (archive, update shown count, etc.)
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await getSession();
+  const userId = session.userId!;
   const { id } = await params;
   const body = await request.json();
 
@@ -23,12 +26,17 @@ export async function PATCH(
     updates.lastShownAt = new Date();
   }
 
+  if (body.liked === true) {
+    updates.likedAt = new Date();
+  } else if (body.liked === false) {
+    updates.likedAt = null;
+  }
+
   if (body.incrementShown) {
-    // Use raw SQL for increment
     const existing = await db
       .select()
       .from(links)
-      .where(eq(links.id, id))
+      .where(and(eq(links.id, id), eq(links.userId, userId)))
       .limit(1);
 
     if (existing.length === 0) {
@@ -46,7 +54,7 @@ export async function PATCH(
   const [updated] = await db
     .update(links)
     .set(updates)
-    .where(eq(links.id, id))
+    .where(and(eq(links.id, id), eq(links.userId, userId)))
     .returning();
 
   if (!updated) {
@@ -61,11 +69,13 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await getSession();
+  const userId = session.userId!;
   const { id } = await params;
 
   const [deleted] = await db
     .delete(links)
-    .where(eq(links.id, id))
+    .where(and(eq(links.id, id), eq(links.userId, userId)))
     .returning();
 
   if (!deleted) {

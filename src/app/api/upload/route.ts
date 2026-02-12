@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { links } from "@/lib/db/schema";
 import { categorizeContent, generateEmbedding } from "@/lib/ai";
 import { nanoid } from "nanoid";
+import { getSession } from "@/lib/auth";
 
 /**
  * POST /api/upload — Add image or text content (not a URL)
@@ -14,6 +15,9 @@ import { nanoid } from "nanoid";
  * - imageData: for image type, base64 data URI
  */
 export async function POST(request: NextRequest) {
+  const session = await getSession();
+  const userId = session.userId!;
+
   const body = await request.json();
   const { type, title, textContent, imageData } = body;
 
@@ -49,6 +53,7 @@ export async function POST(request: NextRequest) {
     .insert(links)
     .values({
       id,
+      userId,
       url: null,
       title: title || (type === "text" ? textContent?.slice(0, 80) : "Image"),
       description: type === "text" ? textContent?.slice(0, 200) : null,
@@ -72,6 +77,9 @@ export async function POST(request: NextRequest) {
  * POST /api/upload/bulk — Mass add multiple links at once
  */
 export async function PUT(request: NextRequest) {
+  const session = await getSession();
+  const userId = session.userId!;
+
   const body = await request.json();
   const { urls } = body;
 
@@ -91,12 +99,12 @@ export async function PUT(request: NextRequest) {
       // Validate
       new URL(url);
 
-      // Check duplicate
-      const { eq } = await import("drizzle-orm");
+      // Check duplicate (per user)
+      const { eq, and } = await import("drizzle-orm");
       const existing = await db
         .select({ id: links.id })
         .from(links)
-        .where(eq(links.url, url))
+        .where(and(eq(links.url, url), eq(links.userId, userId)))
         .limit(1);
 
       if (existing.length > 0) {
@@ -121,6 +129,7 @@ export async function PUT(request: NextRequest) {
 
       await db.insert(links).values({
         id: nanoid(12),
+        userId,
         url,
         title: unfurled.title,
         description: unfurled.description,

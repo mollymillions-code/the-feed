@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { engagements, links, timePreferences } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { getSession } from "@/lib/auth";
 
 /**
  * POST /api/engagement — Log a behavioral event
@@ -11,6 +12,8 @@ import { nanoid } from "nanoid";
  * of dwell time becomes a training signal for the recommendation engine.
  */
 export async function POST(request: NextRequest) {
+  const session = await getSession();
+  const userId = session.userId!;
   const body = await request.json();
   const {
     linkId,
@@ -32,6 +35,7 @@ export async function POST(request: NextRequest) {
   // 1. Log the raw engagement event
   await db.insert(engagements).values({
     id: nanoid(12),
+    userId,
     linkId,
     eventType,
     dwellTimeMs: dwellTimeMs || null,
@@ -47,7 +51,7 @@ export async function POST(request: NextRequest) {
     const [link] = await db
       .select()
       .from(links)
-      .where(eq(links.id, linkId))
+      .where(and(eq(links.id, linkId), eq(links.userId, userId)))
       .limit(1);
 
     if (link) {
@@ -76,7 +80,7 @@ export async function POST(request: NextRequest) {
           engagementScore: newEngagement,
           avgDwellMs: newAvgDwell,
         })
-        .where(eq(links.id, linkId));
+        .where(and(eq(links.id, linkId), eq(links.userId, userId)));
 
       // 3. Update time-of-day preferences (Level 4)
       if (link.categories && link.categories.length > 0) {
@@ -84,6 +88,7 @@ export async function POST(request: NextRequest) {
 
         for (const category of link.categories) {
           await updateTimePreference(
+            userId,
             hourOfDay,
             dayType,
             category,
@@ -99,14 +104,14 @@ export async function POST(request: NextRequest) {
     const [link] = await db
       .select()
       .from(links)
-      .where(eq(links.id, linkId))
+      .where(and(eq(links.id, linkId), eq(links.userId, userId)))
       .limit(1);
 
     if (link) {
       await db
         .update(links)
         .set({ openCount: link.openCount + 1 })
-        .where(eq(links.id, linkId));
+        .where(and(eq(links.id, linkId), eq(links.userId, userId)));
     }
   }
 
@@ -161,6 +166,7 @@ function computeEngagementScore(
  * This learns patterns like: "User engages heavily with AI content at 10am on weekdays"
  */
 async function updateTimePreference(
+  userId: string,
   hour: number,
   dayType: string,
   category: string,
@@ -173,7 +179,8 @@ async function updateTimePreference(
       and(
         eq(timePreferences.hourSlot, hour),
         eq(timePreferences.dayType, dayType),
-        eq(timePreferences.category, category)
+        eq(timePreferences.category, category),
+        eq(timePreferences.userId, userId)
       )
     )
     .limit(1);
@@ -195,6 +202,7 @@ async function updateTimePreference(
   } else {
     await db.insert(timePreferences).values({
       id: nanoid(12),
+      userId,
       hourSlot: hour,
       dayType,
       category,

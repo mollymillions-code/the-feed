@@ -4,6 +4,7 @@ export type LinkStatus = "active" | "archived";
 
 export interface FeedLink {
   id: string;
+  userId: string;
   url: string | null;
   title: string | null;
   description: string | null;
@@ -25,6 +26,7 @@ export interface FeedLink {
   engagementScore: number;
   avgDwellMs: number;
   openCount: number;
+  likedAt: string | null;
 }
 
 export interface UnfurlResult {
