@@ -1,7 +1,7 @@
 "use client";
 
 import { FeedLink, CATEGORY_COLORS } from "@/types";
-import DoneButton from "./DoneButton";
+import CardActions from "./CardActions";
 
 function timeAgo(date: string): string {
   const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
@@ -21,10 +21,11 @@ function timeAgo(date: string): string {
 interface TextCardProps {
   link: FeedLink;
   onDone: (id: string) => void;
+  onDelete: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function TextCard({ link, onDone, onOpen }: TextCardProps) {
+export default function TextCard({ link, onDone, onDelete, onOpen }: TextCardProps) {
   return (
     <div
       className="flex flex-col items-center justify-center h-full px-5 gap-4"
@@ -67,7 +68,7 @@ export default function TextCard({ link, onDone, onOpen }: TextCardProps) {
         </div>
       )}
 
-      <DoneButton linkId={link.id} onDone={onDone} />
+      <CardActions linkId={link.id} onDone={onDone} onDelete={onDelete} />
     </div>
   );
 }

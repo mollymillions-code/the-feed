@@ -1,7 +1,7 @@
 "use client";
 
 import { FeedLink, CATEGORY_COLORS } from "@/types";
-import DoneButton from "./DoneButton";
+import CardActions from "./CardActions";
 
 function getTweetId(url: string): string | null {
   const match = url.match(/(?:twitter\.com|x\.com)\/\w+\/status\/(\d+)/);
@@ -26,10 +26,11 @@ function timeAgo(date: string): string {
 interface TweetCardProps {
   link: FeedLink;
   onDone: (id: string) => void;
+  onDelete: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function TweetCard({ link, onDone, onOpen }: TweetCardProps) {
+export default function TweetCard({ link, onDone, onDelete, onOpen }: TweetCardProps) {
   const tweetId = link.url ? getTweetId(link.url) : null;
 
   return (
@@ -110,7 +111,7 @@ export default function TweetCard({ link, onDone, onOpen }: TweetCardProps) {
         </div>
       )}
 
-      <DoneButton linkId={link.id} onDone={onDone} />
+      <CardActions linkId={link.id} onDone={onDone} onDelete={onDelete} />
     </div>
   );
 }

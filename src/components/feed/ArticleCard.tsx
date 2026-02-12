@@ -1,7 +1,7 @@
 "use client";
 
 import { FeedLink, CATEGORY_COLORS } from "@/types";
-import DoneButton from "./DoneButton";
+import CardActions from "./CardActions";
 
 function timeAgo(date: string): string {
   const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
@@ -29,10 +29,11 @@ function getDomain(url: string): string {
 interface ArticleCardProps {
   link: FeedLink;
   onDone: (id: string) => void;
+  onDelete: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function ArticleCard({ link, onDone, onOpen }: ArticleCardProps) {
+export default function ArticleCard({ link, onDone, onDelete, onOpen }: ArticleCardProps) {
   return (
     <div className="flex flex-col items-center justify-center h-full px-5 gap-4">
       {/* Article Card */}
@@ -99,7 +100,7 @@ export default function ArticleCard({ link, onDone, onOpen }: ArticleCardProps) 
         </div>
       )}
 
-      <DoneButton linkId={link.id} onDone={onDone} />
+      <CardActions linkId={link.id} onDone={onDone} onDelete={onDelete} />
     </div>
   );
 }

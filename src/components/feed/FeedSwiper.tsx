@@ -12,6 +12,7 @@ const FAST_SWIPE_MS = 1500;    // <1.5s = "skipped"
 interface FeedSwiperProps {
   links: FeedLink[];
   onDone: (id: string) => void;
+  onDelete: (id: string) => void;
   onEngagement: (event: EngagementEvent) => void;
   onNearEnd: () => void;
   sessionId: string;
@@ -29,6 +30,7 @@ export interface EngagementEvent {
 export default function FeedSwiper({
   links,
   onDone,
+  onDelete,
   onEngagement,
   onNearEnd,
   sessionId,
@@ -143,6 +145,18 @@ export default function FeedSwiper({
     }
   }
 
+  function handleDelete(id: string) {
+    onDelete(id);
+
+    if (currentIndex < links.length - 1) {
+      setDirection(1);
+      setCurrentIndex((prev) => prev + 1);
+    } else if (currentIndex > 0) {
+      setDirection(-1);
+      setCurrentIndex((prev) => prev - 1);
+    }
+  }
+
   function handleOpen(id: string) {
     onEngagement({
       linkId: id,
@@ -207,6 +221,7 @@ export default function FeedSwiper({
           <FeedCard
             link={currentLink}
             onDone={handleDone}
+            onDelete={handleDelete}
             onOpen={handleOpen}
           />
         </motion.div>

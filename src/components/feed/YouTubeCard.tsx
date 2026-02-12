@@ -1,7 +1,7 @@
 "use client";
 
 import { FeedLink, CATEGORY_COLORS } from "@/types";
-import DoneButton from "./DoneButton";
+import CardActions from "./CardActions";
 
 function getYouTubeId(url: string): string | null {
   const patterns = [
@@ -33,10 +33,11 @@ function timeAgo(date: string): string {
 interface YouTubeCardProps {
   link: FeedLink;
   onDone: (id: string) => void;
+  onDelete: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function YouTubeCard({ link, onDone, onOpen }: YouTubeCardProps) {
+export default function YouTubeCard({ link, onDone, onDelete, onOpen }: YouTubeCardProps) {
   const videoId = link.url ? getYouTubeId(link.url) : null;
 
   return (
@@ -89,7 +90,7 @@ export default function YouTubeCard({ link, onDone, onOpen }: YouTubeCardProps) 
         </div>
       )}
 
-      <DoneButton linkId={link.id} onDone={onDone} />
+      <CardActions linkId={link.id} onDone={onDone} onDelete={onDelete} />
     </div>
   );
 }

@@ -82,6 +82,10 @@ export default function FeedPage() {
     setLinks((prev) => prev.filter((l) => l.id !== id));
   }
 
+  function handleDelete(id: string) {
+    setLinks((prev) => prev.filter((l) => l.id !== id));
+  }
+
   // The core behavioral signal handler — every interaction flows through here
   const handleEngagement = useCallback(
     (event: EngagementEvent) => {
@@ -165,6 +169,7 @@ export default function FeedPage() {
           <FeedSwiper
             links={links}
             onDone={handleDone}
+            onDelete={handleDelete}
             onEngagement={handleEngagement}
             onNearEnd={handleNearEnd}
             sessionId={sessionId}

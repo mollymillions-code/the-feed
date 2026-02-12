@@ -1,7 +1,7 @@
 "use client";
 
 import { FeedLink, CATEGORY_COLORS } from "@/types";
-import DoneButton from "./DoneButton";
+import CardActions from "./CardActions";
 
 function timeAgo(date: string): string {
   const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
@@ -21,10 +21,11 @@ function timeAgo(date: string): string {
 interface ImageCardProps {
   link: FeedLink;
   onDone: (id: string) => void;
+  onDelete: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function ImageCard({ link, onDone, onOpen }: ImageCardProps) {
+export default function ImageCard({ link, onDone, onDelete, onOpen }: ImageCardProps) {
   const imageSrc = link.imageData || link.thumbnail;
 
   return (
@@ -76,7 +77,7 @@ export default function ImageCard({ link, onDone, onOpen }: ImageCardProps) {
         </div>
       )}
 
-      <DoneButton linkId={link.id} onDone={onDone} />
+      <CardActions linkId={link.id} onDone={onDone} onDelete={onDelete} />
     </div>
   );
 }
