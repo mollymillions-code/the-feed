@@ -16,26 +16,9 @@ export default function SettingsPage() {
   useEffect(() => {
     async function fetchStats() {
       try {
-        const [activeRes, archivedRes] = await Promise.all([
-          fetch("/api/links?status=active&limit=9999"),
-          fetch("/api/links?status=archived&limit=9999"),
-        ]);
-        const active = await activeRes.json();
-        const archived = await archivedRes.json();
-
-        const categorySet = new Set<string>();
-        [...active, ...archived].forEach((link: { categories?: string[] }) => {
-          if (link.categories) {
-            link.categories.forEach((c: string) => categorySet.add(c));
-          }
-        });
-
-        setStats({
-          total: active.length + archived.length,
-          active: active.length,
-          archived: archived.length,
-          categories: Array.from(categorySet).sort(),
-        });
+        const res = await fetch("/api/links?stats=true");
+        const data = await res.json();
+        setStats(data);
       } catch {
         // ignore
       }
@@ -45,7 +28,7 @@ export default function SettingsPage() {
 
   async function handleExport() {
     try {
-      const res = await fetch("/api/links?status=active&limit=9999");
+      const res = await fetch("/api/links?status=active&limit=5000");
       const data = await res.json();
       const blob = new Blob([JSON.stringify(data, null, 2)], {
         type: "application/json",
@@ -64,7 +47,7 @@ export default function SettingsPage() {
   return (
     <>
       <div className="flex-1 overflow-y-auto px-5 py-8">
-        <h1 className="text-[20px] font-semibold text-center mb-10 tracking-tight">
+        <h1 className="font-serif text-[22px] text-center mb-10">
           Settings
         </h1>
 
@@ -155,14 +138,14 @@ export default function SettingsPage() {
         {/* About */}
         <section className="text-center mt-16 mb-8">
           <div className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-white/[0.03] mb-4">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#525252" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8A8078" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 11a9 9 0 0 1 9 9" />
               <path d="M4 4a16 16 0 0 1 16 16" />
               <circle cx="5" cy="19" r="1" />
             </svg>
           </div>
-          <p className="text-[13px] font-semibold tracking-tight text-feed-muted">The Feed v1.0</p>
-          <p className="text-[12px] text-feed-dim mt-1 tracking-wide">Your content. Your feed.</p>
+          <p className="font-serif text-[14px] text-feed-muted">The Feed v1.0</p>
+          <p className="text-[12px] text-feed-dim mt-1 tracking-wide italic">Your content. Your feed.</p>
         </section>
       </div>
 

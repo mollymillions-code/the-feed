@@ -1,26 +1,12 @@
 "use client";
 
 import { FeedLink, CATEGORY_COLORS } from "@/types";
+import { timeAgo } from "@/lib/utils";
 import CardActions from "./CardActions";
 
 function getTweetId(url: string): string | null {
   const match = url.match(/(?:twitter\.com|x\.com)\/\w+\/status\/(\d+)/);
   return match ? match[1] : null;
-}
-
-function timeAgo(date: string): string {
-  const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 4) return `${weeks}w ago`;
-  const months = Math.floor(days / 30);
-  return `${months}mo ago`;
 }
 
 interface TweetCardProps {
@@ -50,7 +36,7 @@ export default function TweetCard({ link, onDelete, onOpen }: TweetCardProps) {
             </div>
 
             {/* Tweet content */}
-            <p className="text-[15px] leading-relaxed text-neutral-300">
+            <p className="text-[15px] leading-relaxed text-feed-text/80">
               {link.description || link.title || ""}
             </p>
 
@@ -62,33 +48,37 @@ export default function TweetCard({ link, onDelete, onOpen }: TweetCardProps) {
               />
             )}
 
-            <a
-              href={link.url || undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-feed-accent text-[13px] font-medium tracking-wide"
-              onClick={() => onOpen(link.id)}
-            >
-              View on X →
-            </a>
+            {link.url && (
+              <a
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-feed-accent text-[13px] font-medium tracking-wide"
+                onClick={() => onOpen(link.id)}
+              >
+                View on X →
+              </a>
+            )}
           </div>
         ) : (
           <div className="py-8 text-center">
-            <p className="text-sm mb-4 text-neutral-300">{link.title || link.description || "Tweet"}</p>
-            <a
-              href={link.url || undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-feed-accent text-[13px] font-medium tracking-wide"
-            >
-              Open on X →
-            </a>
+            <p className="text-sm mb-4 text-feed-text/80">{link.title || link.description || "Tweet"}</p>
+            {link.url && (
+              <a
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-feed-accent text-[13px] font-medium tracking-wide"
+              >
+                Open on X →
+              </a>
+            )}
           </div>
         )}
       </div>
 
       {/* Source + time */}
-      <p className="text-neutral-500 text-xs tracking-wide">
+      <p className="text-feed-muted text-xs tracking-wide">
         x.com · {timeAgo(link.addedAt)}
       </p>
 
@@ -100,8 +90,8 @@ export default function TweetCard({ link, onDelete, onOpen }: TweetCardProps) {
               key={cat}
               className="px-3 py-1 rounded-full text-[11px] font-semibold tracking-wider uppercase"
               style={{
-                backgroundColor: `${CATEGORY_COLORS[cat] || "#888"}12`,
-                color: CATEGORY_COLORS[cat] || "#888",
+                backgroundColor: `${CATEGORY_COLORS[cat] || "#888888"}12`,
+                color: CATEGORY_COLORS[cat] || "#888888",
               }}
             >
               {cat}

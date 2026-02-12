@@ -57,14 +57,14 @@ export const CATEGORIES = [
 export type Category = (typeof CATEGORIES)[number];
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  Tech: "#6366f1",
-  AI: "#8b5cf6",
-  Design: "#ec4899",
-  Startups: "#f59e0b",
-  Health: "#22c55e",
-  Science: "#06b6d4",
-  Finance: "#14b8a6",
-  Creativity: "#f97316",
-  Wisdom: "#a78bfa",
-  Fun: "#ef4444",
+  Tech: "#5E9B8A",
+  AI: "#9B7ECB",
+  Design: "#D4708A",
+  Startups: "#D4A04B",
+  Health: "#7BA67E",
+  Science: "#5B9BC4",
+  Finance: "#4E9E97",
+  Creativity: "#D07845",
+  Wisdom: "#A08BC4",
+  Fun: "#D06B60",
 };

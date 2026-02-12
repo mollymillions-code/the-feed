@@ -9,36 +9,43 @@ const config: Config = {
     extend: {
       colors: {
         feed: {
-          bg: "#000000",
-          surface: "#0a0a0a",
-          card: "#111111",
-          border: "#1a1a1a",
-          text: "#f0f0f0",
-          muted: "#737373",
-          dim: "#525252",
-          accent: "#818cf8",
-          done: "#34d399",
+          bg: "#0C0A09",
+          surface: "#141211",
+          card: "#1A1816",
+          border: "#262320",
+          text: "#F5F0EB",
+          muted: "#8A8078",
+          dim: "#5C544D",
+          accent: "#D4A04B",
+          "accent-soft": "#C07A4B",
+          done: "#7BA67E",
         },
       },
       fontFamily: {
         sans: [
-          "var(--font-dm-sans)",
+          "var(--font-jakarta)",
           "-apple-system",
           "BlinkMacSystemFont",
           "Segoe UI",
           "sans-serif",
+        ],
+        serif: [
+          "var(--font-serif)",
+          "Georgia",
+          "Times New Roman",
+          "serif",
         ],
       },
       borderRadius: {
         "2.5xl": "20px",
       },
       animation: {
-        "glow-pulse": "glow-pulse 2s ease-in-out infinite alternate",
+        "glow-pulse": "glow-pulse 3s ease-in-out infinite alternate",
       },
       keyframes: {
         "glow-pulse": {
-          "0%": { opacity: "0.4" },
-          "100%": { opacity: "0.7" },
+          "0%": { opacity: "0.3" },
+          "100%": { opacity: "0.6" },
         },
       },
     },

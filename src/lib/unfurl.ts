@@ -1,5 +1,17 @@
 import { ContentType, UnfurlResult } from "@/types";
 
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
 function detectContentType(url: string): ContentType {
   const hostname = new URL(url).hostname.toLowerCase();
   if (hostname.includes("youtube.com") || hostname.includes("youtu.be")) return "youtube";
@@ -81,11 +93,16 @@ export async function unfurlUrl(url: string): Promise<UnfurlResult> {
 
     const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
 
+    const rawTitle = getMetaContent("og:title") || getMetaContent("twitter:title") || (titleMatch ? titleMatch[1] : null);
+    const rawDescription = getMetaContent("og:description") || getMetaContent("twitter:description") || getMetaContent("description");
+    const rawThumbnail = getMetaContent("og:image") || getMetaContent("twitter:image");
+    const rawSiteName = getMetaContent("og:site_name") || new URL(url).hostname.replace("www.", "");
+
     return {
-      title: getMetaContent("og:title") || getMetaContent("twitter:title") || (titleMatch ? titleMatch[1] : null),
-      description: getMetaContent("og:description") || getMetaContent("twitter:description") || getMetaContent("description"),
-      thumbnail: getMetaContent("og:image") || getMetaContent("twitter:image"),
-      siteName: getMetaContent("og:site_name") || new URL(url).hostname.replace("www.", ""),
+      title: rawTitle ? decodeHtmlEntities(rawTitle) : null,
+      description: rawDescription ? decodeHtmlEntities(rawDescription) : null,
+      thumbnail: rawThumbnail ? decodeHtmlEntities(rawThumbnail) : null,
+      siteName: rawSiteName ? decodeHtmlEntities(rawSiteName) : null,
       contentType,
       metadata,
     };

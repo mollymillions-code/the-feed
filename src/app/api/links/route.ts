@@ -4,10 +4,29 @@ import { links } from "@/lib/db/schema";
 import { unfurlUrl } from "@/lib/unfurl";
 import { categorizeContent, generateEmbedding } from "@/lib/ai";
 import { nanoid } from "nanoid";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, count, sql } from "drizzle-orm";
 
 // GET /api/links — list all links (with optional status filter)
+// ?stats=true returns counts + categories without fetching all rows
 export async function GET(request: NextRequest) {
+  const wantStats = request.nextUrl.searchParams.get("stats") === "true";
+
+  if (wantStats) {
+    const [activeCount] = await db.select({ count: count() }).from(links).where(eq(links.status, "active"));
+    const [archivedCount] = await db.select({ count: count() }).from(links).where(eq(links.status, "archived"));
+    const catRows = await db.select({ categories: links.categories }).from(links).where(sql`${links.categories} is not null`);
+    const categorySet = new Set<string>();
+    catRows.forEach((row) => {
+      if (row.categories) row.categories.forEach((c) => categorySet.add(c));
+    });
+    return NextResponse.json({
+      active: activeCount.count,
+      archived: archivedCount.count,
+      total: activeCount.count + archivedCount.count,
+      categories: Array.from(categorySet).sort(),
+    });
+  }
+
   const status = request.nextUrl.searchParams.get("status") || "active";
   const limit = parseInt(request.nextUrl.searchParams.get("limit") || "50");
 

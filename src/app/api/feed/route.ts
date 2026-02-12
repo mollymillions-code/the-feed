@@ -4,6 +4,7 @@ import { links, timePreferences } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { scoreFeedLinks, SessionContext, TimePreference } from "@/lib/feed-algorithm";
 import { FeedLink } from "@/types";
+import { decodeEntities } from "@/lib/utils";
 
 // GET /api/feed — get smart-ordered feed with full recommendation engine
 export async function GET(request: NextRequest) {
@@ -75,9 +76,13 @@ export async function GET(request: NextRequest) {
     cardsShown,
   };
 
-  // Map to FeedLink type
+  // Map to FeedLink type (decode HTML entities as safety net)
   const feedLinks: FeedLink[] = filtered.map((link) => ({
     ...link,
+    title: decodeEntities(link.title),
+    description: decodeEntities(link.description),
+    aiSummary: decodeEntities(link.aiSummary),
+    siteName: decodeEntities(link.siteName),
     addedAt: link.addedAt.toISOString(),
     archivedAt: link.archivedAt?.toISOString() || null,
     lastShownAt: link.lastShownAt?.toISOString() || null,

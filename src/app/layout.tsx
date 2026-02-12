@@ -1,10 +1,17 @@
 import type { Metadata, Viewport } from "next";
-import { DM_Sans } from "next/font/google";
+import { Plus_Jakarta_Sans, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 
-const dmSans = DM_Sans({
+const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  variable: "--font-dm-sans",
+  variable: "--font-jakarta",
+  display: "swap",
+});
+
+const instrumentSerif = Instrument_Serif({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-serif",
   display: "swap",
 });
 
@@ -25,7 +32,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#000000",
+  themeColor: "#0C0A09",
 };
 
 export default function RootLayout({
@@ -34,12 +41,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning className={dmSans.variable}>
+    <html lang="en" suppressHydrationWarning className={`${jakarta.variable} ${instrumentSerif.variable}`}>
       <head>
         <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
       </head>
       <body className="font-sans">
-        <div className="flex flex-col h-[100dvh] w-full overflow-hidden safe-top">
+        <div className="noise" />
+        <div className="flex flex-col h-[100dvh] w-full overflow-hidden safe-top relative z-10">
           {children}
         </div>
       </body>

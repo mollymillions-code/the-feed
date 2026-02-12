@@ -25,7 +25,7 @@ export default function CategoryTabs({
       >
         {allCategories.map((cat) => {
           const isActive = cat === activeCategory;
-          const color = cat === "All" ? "#f0f0f0" : CATEGORY_COLORS[cat] || "#737373";
+          const color = cat === "All" ? "#F5F0EB" : CATEGORY_COLORS[cat] || "#8A8078";
 
           return (
             <button

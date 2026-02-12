@@ -196,6 +196,15 @@ export default function FeedSwiper({
           />
         </motion.div>
       </AnimatePresence>
+
+      {/* End-of-feed indicator */}
+      {currentIndex === links.length - 1 && (
+        <div className="absolute bottom-6 left-0 right-0 flex justify-center z-10 pointer-events-none">
+          <p className="text-feed-dim text-[12px] tracking-wide animate-pulse">
+            You&apos;re all caught up
+          </p>
+        </div>
+      )}
     </div>
   );
 }

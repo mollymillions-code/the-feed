@@ -1,30 +1,8 @@
 "use client";
 
 import { FeedLink, CATEGORY_COLORS } from "@/types";
+import { timeAgo, getDomain } from "@/lib/utils";
 import CardActions from "./CardActions";
-
-function timeAgo(date: string): string {
-  const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 4) return `${weeks}w ago`;
-  const months = Math.floor(days / 30);
-  return `${months}mo ago`;
-}
-
-function getDomain(url: string): string {
-  try {
-    return new URL(url).hostname.replace("www.", "");
-  } catch {
-    return "";
-  }
-}
 
 interface ArticleCardProps {
   link: FeedLink;
@@ -51,7 +29,7 @@ export default function ArticleCard({ link, onDelete, onOpen }: ArticleCardProps
 
         {/* Content */}
         <div className="p-5 space-y-3.5">
-          <h2 className="text-[17px] font-semibold leading-snug line-clamp-2 tracking-tight">
+          <h2 className="font-serif text-[19px] leading-snug line-clamp-2">
             {link.title || "Untitled Article"}
           </h2>
 
@@ -64,20 +42,22 @@ export default function ArticleCard({ link, onDelete, onOpen }: ArticleCardProps
             </div>
           )}
 
-          <a
-            href={link.url || undefined}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block text-feed-accent text-[13px] font-medium tracking-wide"
-            onClick={() => onOpen(link.id)}
-          >
-            Read full article →
-          </a>
+          {link.url && (
+            <a
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block text-feed-accent text-[13px] font-medium tracking-wide"
+              onClick={() => onOpen(link.id)}
+            >
+              Read full article →
+            </a>
+          )}
         </div>
       </div>
 
       {/* Source + time */}
-      <p className="text-neutral-500 text-xs tracking-wide">
+      <p className="text-feed-muted text-xs tracking-wide">
         {link.url ? getDomain(link.url) : ""}{link.url ? " · " : ""}{timeAgo(link.addedAt)}
       </p>
 
@@ -89,8 +69,8 @@ export default function ArticleCard({ link, onDelete, onOpen }: ArticleCardProps
               key={cat}
               className="px-3 py-1 rounded-full text-[11px] font-semibold tracking-wider uppercase"
               style={{
-                backgroundColor: `${CATEGORY_COLORS[cat] || "#888"}12`,
-                color: CATEGORY_COLORS[cat] || "#888",
+                backgroundColor: `${CATEGORY_COLORS[cat] || "#888888"}12`,
+                color: CATEGORY_COLORS[cat] || "#888888",
               }}
             >
               {cat}

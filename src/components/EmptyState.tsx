@@ -8,13 +8,13 @@ export default function EmptyState() {
         <div className="relative text-5xl">📭</div>
       </div>
 
-      <h2 className="text-xl font-bold mb-2 tracking-tight">Your feed is empty</h2>
+      <h2 className="font-serif text-xl mb-2">Your feed is empty</h2>
       <p className="text-feed-muted mb-10 text-sm leading-relaxed max-w-[260px]">
         Add your first link to start building your personal feed
       </p>
       <Link
         href="/add"
-        className="inline-flex items-center gap-2 bg-feed-accent text-white px-7 py-3.5 rounded-full text-sm font-semibold tracking-wide transition-all duration-200 active:scale-95 shadow-[0_0_24px_rgba(129,140,248,0.2)]"
+        className="inline-flex items-center gap-2 bg-feed-accent text-white px-7 py-3.5 rounded-full text-sm font-semibold tracking-wide transition-all duration-200 active:scale-95 shadow-[0_0_24px_rgba(212,160,75,0.2)]"
       >
         <span className="text-base">+</span>
         Add a link

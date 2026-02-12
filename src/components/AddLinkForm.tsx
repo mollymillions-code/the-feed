@@ -180,7 +180,7 @@ export default function AddLinkForm({ initialUrl, onAdded }: AddLinkFormProps) {
         <button
           type="submit"
           disabled={!url.trim() || isProcessing}
-          className="w-full bg-feed-accent/90 hover:bg-feed-accent text-white py-4 rounded-2.5xl text-[13px] font-semibold tracking-wide transition-all active:scale-[0.96] disabled:opacity-20 disabled:active:scale-100 shadow-[0_0_20px_rgba(129,140,248,0.15)]"
+          className="w-full bg-feed-accent/90 hover:bg-feed-accent text-white py-4 rounded-2.5xl text-[13px] font-semibold tracking-wide transition-all active:scale-[0.96] disabled:opacity-20 disabled:active:scale-100 shadow-[0_0_20px_rgba(212,160,75,0.15)]"
         >
           {isProcessing ? (
             <span className="animate-pulse tracking-wide">
@@ -232,8 +232,8 @@ export default function AddLinkForm({ initialUrl, onAdded }: AddLinkFormProps) {
                   key={cat}
                   className="px-3 py-1 rounded-full text-[11px] font-semibold tracking-wider uppercase"
                   style={{
-                    backgroundColor: `${CATEGORY_COLORS[cat] || "#888"}12`,
-                    color: CATEGORY_COLORS[cat] || "#888",
+                    backgroundColor: `${CATEGORY_COLORS[cat] || "#888888"}12`,
+                    color: CATEGORY_COLORS[cat] || "#888888",
                   }}
                 >
                   {cat}

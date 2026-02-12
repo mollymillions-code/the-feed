@@ -104,8 +104,8 @@ function SuccessCard({ result }: { result: FeedLink }) {
               key={cat}
               className="px-3 py-1 rounded-full text-[11px] font-semibold tracking-wider uppercase"
               style={{
-                backgroundColor: `${CATEGORY_COLORS[cat] || "#888"}12`,
-                color: CATEGORY_COLORS[cat] || "#888",
+                backgroundColor: `${CATEGORY_COLORS[cat] || "#888888"}12`,
+                color: CATEGORY_COLORS[cat] || "#888888",
               }}
             >
               {cat}
@@ -208,7 +208,7 @@ function ImageMode({ onAdded }: { onAdded: () => void }) {
         ) : (
           <>
             <div className="w-12 h-12 rounded-2xl bg-white/[0.03] flex items-center justify-center">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#525252" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8A8078" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                 <circle cx="8.5" cy="8.5" r="1.5" />
                 <polyline points="21 15 16 10 5 21" />
@@ -235,7 +235,7 @@ function ImageMode({ onAdded }: { onAdded: () => void }) {
         <button
           onClick={handleSubmit}
           disabled={state === "uploading"}
-          className="w-full bg-feed-accent/90 hover:bg-feed-accent text-white py-4 rounded-2.5xl text-[13px] font-semibold tracking-wide transition-all active:scale-[0.96] disabled:opacity-20 shadow-[0_0_20px_rgba(129,140,248,0.15)]"
+          className="w-full bg-feed-accent/90 hover:bg-feed-accent text-white py-4 rounded-2.5xl text-[13px] font-semibold tracking-wide transition-all active:scale-[0.96] disabled:opacity-20 shadow-[0_0_20px_rgba(212,160,75,0.15)]"
         >
           {state === "uploading" ? (
             <span className="animate-pulse tracking-wide">Uploading & tagging...</span>
@@ -335,7 +335,7 @@ function TextMode({ onAdded }: { onAdded: () => void }) {
       <button
         onClick={handleSubmit}
         disabled={!content.trim() || state === "uploading"}
-        className="w-full bg-feed-accent/90 hover:bg-feed-accent text-white py-4 rounded-2.5xl text-[13px] font-semibold tracking-wide transition-all active:scale-[0.96] disabled:opacity-20 shadow-[0_0_20px_rgba(129,140,248,0.15)]"
+        className="w-full bg-feed-accent/90 hover:bg-feed-accent text-white py-4 rounded-2.5xl text-[13px] font-semibold tracking-wide transition-all active:scale-[0.96] disabled:opacity-20 shadow-[0_0_20px_rgba(212,160,75,0.15)]"
       >
         {state === "uploading" ? (
           <span className="animate-pulse tracking-wide">Saving & tagging...</span>
@@ -431,7 +431,7 @@ function BulkMode({ onAdded }: { onAdded: () => void }) {
       <button
         onClick={handleSubmit}
         disabled={count === 0 || state === "importing"}
-        className="w-full bg-feed-accent/90 hover:bg-feed-accent text-white py-4 rounded-2.5xl text-[13px] font-semibold tracking-wide transition-all active:scale-[0.96] disabled:opacity-20 shadow-[0_0_20px_rgba(129,140,248,0.15)]"
+        className="w-full bg-feed-accent/90 hover:bg-feed-accent text-white py-4 rounded-2.5xl text-[13px] font-semibold tracking-wide transition-all active:scale-[0.96] disabled:opacity-20 shadow-[0_0_20px_rgba(212,160,75,0.15)]"
       >
         {state === "importing" ? (
           <span className="animate-pulse tracking-wide">Importing links...</span>
@@ -471,7 +471,7 @@ function BulkMode({ onAdded }: { onAdded: () => void }) {
 // ─── Mode Tab Icons ─────────────────────────────────────────
 
 function ModeIcon({ mode, active }: { mode: InputMode; active: boolean }) {
-  const cls = `w-4 h-4 ${active ? "text-white" : "text-feed-dim"} transition-colors`;
+  const cls = `w-4 h-4 ${active ? "text-feed-text" : "text-feed-dim"} transition-colors`;
   switch (mode) {
     case "link":
       return (
@@ -538,7 +538,7 @@ function AddPageContent() {
   return (
     <>
       <div className="flex-1 overflow-y-auto px-5 py-8">
-        <h1 className="text-[20px] font-semibold text-center mb-8 tracking-tight">
+        <h1 className="font-serif text-[22px] text-center mb-8">
           Add to Feed
         </h1>
 
@@ -550,7 +550,7 @@ function AddPageContent() {
               onClick={() => setMode(m.key)}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-semibold tracking-wide transition-all active:scale-[0.96] ${
                 mode === m.key
-                  ? "bg-white/[0.08] text-white shadow-sm"
+                  ? "bg-white/[0.08] text-feed-text shadow-sm"
                   : "text-feed-dim hover:text-feed-muted"
               }`}
             >
