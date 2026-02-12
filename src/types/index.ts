@@ -53,6 +53,7 @@ export const CATEGORIES = [
   "Finance",
   "Creativity",
   "Wisdom",
+  "Music",
   "Fun",
 ] as const;
 
@@ -68,5 +69,6 @@ export const CATEGORY_COLORS: Record<string, string> = {
   Finance: "#4E9E97",
   Creativity: "#D07845",
   Wisdom: "#A08BC4",
+  Music: "#C75B8E",
   Fun: "#D06B60",
 };
