@@ -28,12 +28,11 @@ function getDomain(url: string): string {
 
 interface ArticleCardProps {
   link: FeedLink;
-  onDone: (id: string) => void;
   onDelete: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function ArticleCard({ link, onDone, onDelete, onOpen }: ArticleCardProps) {
+export default function ArticleCard({ link, onDelete, onOpen }: ArticleCardProps) {
   return (
     <div className="flex flex-col items-center justify-center h-full px-5 gap-4">
       {/* Article Card */}
@@ -100,7 +99,7 @@ export default function ArticleCard({ link, onDone, onDelete, onOpen }: ArticleC
         </div>
       )}
 
-      <CardActions linkId={link.id} onDone={onDone} onDelete={onDelete} />
+      <CardActions linkId={link.id} onDelete={onDelete} />
     </div>
   );
 }

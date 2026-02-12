@@ -28,12 +28,11 @@ function getDomain(url: string): string {
 
 interface GenericCardProps {
   link: FeedLink;
-  onDone: (id: string) => void;
   onDelete: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function GenericCard({ link, onDone, onDelete, onOpen }: GenericCardProps) {
+export default function GenericCard({ link, onDelete, onOpen }: GenericCardProps) {
   return (
     <div className="flex flex-col items-center justify-center h-full px-5 gap-4">
       <div className="w-full max-w-[400px] rounded-2.5xl overflow-hidden card-glass p-6 flex flex-col items-center gap-4">
@@ -100,7 +99,7 @@ export default function GenericCard({ link, onDone, onDelete, onOpen }: GenericC
         </div>
       )}
 
-      <CardActions linkId={link.id} onDone={onDone} onDelete={onDelete} />
+      <CardActions linkId={link.id} onDelete={onDelete} />
     </div>
   );
 }

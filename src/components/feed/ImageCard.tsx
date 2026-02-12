@@ -20,12 +20,11 @@ function timeAgo(date: string): string {
 
 interface ImageCardProps {
   link: FeedLink;
-  onDone: (id: string) => void;
   onDelete: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function ImageCard({ link, onDone, onDelete, onOpen }: ImageCardProps) {
+export default function ImageCard({ link, onDelete, onOpen }: ImageCardProps) {
   const imageSrc = link.imageData || link.thumbnail;
 
   return (
@@ -77,7 +76,7 @@ export default function ImageCard({ link, onDone, onDelete, onOpen }: ImageCardP
         </div>
       )}
 
-      <CardActions linkId={link.id} onDone={onDone} onDelete={onDelete} />
+      <CardActions linkId={link.id} onDelete={onDelete} />
     </div>
   );
 }

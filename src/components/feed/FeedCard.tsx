@@ -10,24 +10,23 @@ import GenericCard from "./GenericCard";
 
 interface FeedCardProps {
   link: FeedLink;
-  onDone: (id: string) => void;
   onDelete: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function FeedCard({ link, onDone, onDelete, onOpen }: FeedCardProps) {
+export default function FeedCard({ link, onDelete, onOpen }: FeedCardProps) {
   switch (link.contentType) {
     case "youtube":
-      return <YouTubeCard link={link} onDone={onDone} onDelete={onDelete} onOpen={onOpen} />;
+      return <YouTubeCard link={link} onDelete={onDelete} onOpen={onOpen} />;
     case "tweet":
-      return <TweetCard link={link} onDone={onDone} onDelete={onDelete} onOpen={onOpen} />;
+      return <TweetCard link={link} onDelete={onDelete} onOpen={onOpen} />;
     case "article":
-      return <ArticleCard link={link} onDone={onDone} onDelete={onDelete} onOpen={onOpen} />;
+      return <ArticleCard link={link} onDelete={onDelete} onOpen={onOpen} />;
     case "image":
-      return <ImageCard link={link} onDone={onDone} onDelete={onDelete} onOpen={onOpen} />;
+      return <ImageCard link={link} onDelete={onDelete} onOpen={onOpen} />;
     case "text":
-      return <TextCard link={link} onDone={onDone} onDelete={onDelete} onOpen={onOpen} />;
+      return <TextCard link={link} onDelete={onDelete} onOpen={onOpen} />;
     default:
-      return <GenericCard link={link} onDone={onDone} onDelete={onDelete} onOpen={onOpen} />;
+      return <GenericCard link={link} onDelete={onDelete} onOpen={onOpen} />;
   }
 }

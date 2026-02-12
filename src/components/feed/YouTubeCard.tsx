@@ -32,12 +32,11 @@ function timeAgo(date: string): string {
 
 interface YouTubeCardProps {
   link: FeedLink;
-  onDone: (id: string) => void;
   onDelete: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function YouTubeCard({ link, onDone, onDelete, onOpen }: YouTubeCardProps) {
+export default function YouTubeCard({ link, onDelete, onOpen }: YouTubeCardProps) {
   const videoId = link.url ? getYouTubeId(link.url) : null;
 
   return (
@@ -90,7 +89,7 @@ export default function YouTubeCard({ link, onDone, onDelete, onOpen }: YouTubeC
         </div>
       )}
 
-      <CardActions linkId={link.id} onDone={onDone} onDelete={onDelete} />
+      <CardActions linkId={link.id} onDelete={onDelete} />
     </div>
   );
 }

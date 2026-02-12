@@ -20,12 +20,11 @@ function timeAgo(date: string): string {
 
 interface TextCardProps {
   link: FeedLink;
-  onDone: (id: string) => void;
   onDelete: (id: string) => void;
   onOpen: (id: string) => void;
 }
 
-export default function TextCard({ link, onDone, onDelete, onOpen }: TextCardProps) {
+export default function TextCard({ link, onDelete, onOpen }: TextCardProps) {
   return (
     <div
       className="flex flex-col items-center justify-center h-full px-5 gap-4"
@@ -68,7 +67,7 @@ export default function TextCard({ link, onDone, onDelete, onOpen }: TextCardPro
         </div>
       )}
 
-      <CardActions linkId={link.id} onDone={onDone} onDelete={onDelete} />
+      <CardActions linkId={link.id} onDelete={onDelete} />
     </div>
   );
 }

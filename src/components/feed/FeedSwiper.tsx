@@ -11,7 +11,6 @@ const FAST_SWIPE_MS = 1500;    // <1.5s = "skipped"
 
 interface FeedSwiperProps {
   links: FeedLink[];
-  onDone: (id: string) => void;
   onDelete: (id: string) => void;
   onEngagement: (event: EngagementEvent) => void;
   onNearEnd: () => void;
@@ -20,7 +19,7 @@ interface FeedSwiperProps {
 
 export interface EngagementEvent {
   linkId: string;
-  eventType: "impression" | "dwell" | "open" | "done";
+  eventType: "impression" | "dwell" | "open";
   dwellTimeMs?: number;
   swipeVelocity?: number;
   cardIndex?: number;
@@ -29,7 +28,6 @@ export interface EngagementEvent {
 
 export default function FeedSwiper({
   links,
-  onDone,
   onDelete,
   onEngagement,
   onNearEnd,
@@ -118,33 +116,6 @@ export default function FeedSwiper({
     }
   }
 
-  function handleDone(id: string) {
-    // Log dwell + done event
-    const dwellTimeMs = Date.now() - cardStartTime.current;
-
-    onEngagement({
-      linkId: id,
-      eventType: "dwell",
-      dwellTimeMs,
-      cardIndex: currentIndex,
-      sessionId,
-    });
-
-    onEngagement({
-      linkId: id,
-      eventType: "done",
-      cardIndex: currentIndex,
-      sessionId,
-    });
-
-    onDone(id);
-
-    if (currentIndex < links.length - 1) {
-      setDirection(1);
-      setCurrentIndex((prev) => prev + 1);
-    }
-  }
-
   function handleDelete(id: string) {
     onDelete(id);
 
@@ -220,7 +191,6 @@ export default function FeedSwiper({
         >
           <FeedCard
             link={currentLink}
-            onDone={handleDone}
             onDelete={handleDelete}
             onOpen={handleOpen}
           />

@@ -78,10 +78,6 @@ export default function FeedPage() {
     setLoading(true);
   }
 
-  function handleDone(id: string) {
-    setLinks((prev) => prev.filter((l) => l.id !== id));
-  }
-
   function handleDelete(id: string) {
     setLinks((prev) => prev.filter((l) => l.id !== id));
   }
@@ -168,7 +164,6 @@ export default function FeedPage() {
         ) : (
           <FeedSwiper
             links={links}
-            onDone={handleDone}
             onDelete={handleDelete}
             onEngagement={handleEngagement}
             onNearEnd={handleNearEnd}
