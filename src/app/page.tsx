@@ -142,7 +142,7 @@ export default function FeedPage() {
         onSelect={handleCategorySelect}
       />
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-full px-5 gap-4 animate-pulse">
             <div className="w-full max-w-[400px] rounded-2.5xl overflow-hidden card-glass">
