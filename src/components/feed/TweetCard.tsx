@@ -1,5 +1,6 @@
 "use client";
 
+import type { MouseEvent } from "react";
 import { FeedLink, CATEGORY_COLORS } from "@/types";
 import { timeAgo } from "@/lib/utils";
 import CardActions from "./CardActions";
@@ -18,6 +19,13 @@ interface TweetCardProps {
 
 export default function TweetCard({ link, onDelete, onLike, onOpen }: TweetCardProps) {
   const tweetId = link.url ? getTweetId(link.url) : null;
+  function handleExternalOpen(event: MouseEvent<HTMLAnchorElement>) {
+    if (!link.url) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onOpen(link.id);
+    window.open(link.url, "_blank", "noopener,noreferrer");
+  }
 
   return (
     <div className="flex flex-col items-center justify-center h-full px-5 gap-4">
@@ -55,7 +63,8 @@ export default function TweetCard({ link, onDelete, onLike, onOpen }: TweetCardP
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-feed-accent text-[13px] font-medium tracking-wide"
-                onClick={() => onOpen(link.id)}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={handleExternalOpen}
               >
                 View on X →
               </a>
@@ -70,6 +79,8 @@ export default function TweetCard({ link, onDelete, onLike, onOpen }: TweetCardP
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-feed-accent text-[13px] font-medium tracking-wide"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={handleExternalOpen}
               >
                 Open on X →
               </a>

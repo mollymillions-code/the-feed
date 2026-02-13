@@ -1,5 +1,6 @@
 "use client";
 
+import type { MouseEvent } from "react";
 import { FeedLink, CATEGORY_COLORS } from "@/types";
 import { timeAgo, getDomain } from "@/lib/utils";
 import CardActions from "./CardActions";
@@ -12,6 +13,14 @@ interface GenericCardProps {
 }
 
 export default function GenericCard({ link, onDelete, onLike, onOpen }: GenericCardProps) {
+  function handleExternalOpen(event: MouseEvent<HTMLAnchorElement>) {
+    if (!link.url) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onOpen(link.id);
+    window.open(link.url, "_blank", "noopener,noreferrer");
+  }
+
   return (
     <div className="flex flex-col items-center justify-center h-full px-5 gap-4">
       <div className="w-full max-w-[400px] rounded-2.5xl overflow-hidden card-glass p-6 flex flex-col items-center gap-4">
@@ -50,7 +59,8 @@ export default function GenericCard({ link, onDelete, onLike, onOpen }: GenericC
             target="_blank"
             rel="noopener noreferrer"
             className="text-feed-accent text-[13px] font-medium tracking-wide"
-            onClick={() => onOpen(link.id)}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={handleExternalOpen}
           >
             Open link →
           </a>

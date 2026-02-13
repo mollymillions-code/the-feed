@@ -1,5 +1,6 @@
 "use client";
 
+import type { MouseEvent } from "react";
 import { FeedLink, CATEGORY_COLORS } from "@/types";
 import { timeAgo, getDomain } from "@/lib/utils";
 import CardActions from "./CardActions";
@@ -12,6 +13,14 @@ interface ArticleCardProps {
 }
 
 export default function ArticleCard({ link, onDelete, onLike, onOpen }: ArticleCardProps) {
+  function handleExternalOpen(event: MouseEvent<HTMLAnchorElement>) {
+    if (!link.url) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onOpen(link.id);
+    window.open(link.url, "_blank", "noopener,noreferrer");
+  }
+
   return (
     <div className="flex flex-col items-center justify-center h-full px-5 gap-4">
       {/* Article Card */}
@@ -49,7 +58,8 @@ export default function ArticleCard({ link, onDelete, onLike, onOpen }: ArticleC
               target="_blank"
               rel="noopener noreferrer"
               className="inline-block text-feed-accent text-[13px] font-medium tracking-wide"
-              onClick={() => onOpen(link.id)}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={handleExternalOpen}
             >
               Read full article →
             </a>
