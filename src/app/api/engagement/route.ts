@@ -1,177 +1,199 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { engagements, links, timePreferences } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getSession } from "@/lib/auth";
 
+type EventType = "impression" | "dwell" | "open";
+
+interface EngagementPayload {
+  linkId: string;
+  eventType: EventType;
+  dwellTimeMs?: number;
+  swipeVelocity?: number;
+  cardIndex?: number;
+  sessionId?: string;
+}
+
+interface TimePreferenceContribution {
+  sum: number;
+  count: number;
+}
+
 /**
- * POST /api/engagement — Log a behavioral event
- *
- * This is the raw signal pipeline. Every swipe, every tap, every second
- * of dwell time becomes a training signal for the recommendation engine.
+ * POST /api/engagement — Log behavioral events (single or batched)
  */
 export async function POST(request: NextRequest) {
   const session = await getSession();
   const userId = session.userId!;
   const body = await request.json();
-  const {
-    linkId,
-    eventType,
-    dwellTimeMs,
-    swipeVelocity,
-    cardIndex,
-    sessionId,
-  } = body;
 
-  if (!linkId || !eventType) {
-    return NextResponse.json({ error: "linkId and eventType required" }, { status: 400 });
+  const rawEvents: unknown[] = Array.isArray(body?.events)
+    ? body.events
+    : body
+      ? [body]
+      : [];
+
+  const events = rawEvents.filter(isEngagementPayload);
+  if (events.length === 0) {
+    return NextResponse.json({ error: "No valid engagement events provided" }, { status: 400 });
   }
 
   const now = new Date();
   const hourOfDay = now.getHours();
   const dayOfWeek = now.getDay();
+  const dayType = dayOfWeek === 0 || dayOfWeek === 6 ? "weekend" : "weekday";
 
-  // 1. Log the raw engagement event
-  await db.insert(engagements).values({
-    id: nanoid(12),
-    userId,
-    linkId,
-    eventType,
-    dwellTimeMs: dwellTimeMs || null,
-    swipeVelocity: swipeVelocity || null,
-    cardIndex: cardIndex ?? null,
-    hourOfDay,
-    dayOfWeek,
-    sessionId: sessionId || null,
-  });
+  await db.insert(engagements).values(
+    events.map((event) => ({
+      id: nanoid(12),
+      userId,
+      linkId: event.linkId,
+      eventType: event.eventType,
+      dwellTimeMs: event.dwellTimeMs || null,
+      swipeVelocity: event.swipeVelocity || null,
+      cardIndex: event.cardIndex ?? null,
+      hourOfDay,
+      dayOfWeek,
+      sessionId: event.sessionId || null,
+    }))
+  );
 
-  // 2. Update link-level aggregated scores
-  if (eventType === "dwell" && dwellTimeMs) {
-    const [link] = await db
-      .select()
+  const impressionCounts = aggregateCounts(events, "impression");
+  for (const [linkId, count] of impressionCounts) {
+    await db
+      .update(links)
+      .set({
+        shownCount: sql`${links.shownCount} + ${count}`,
+        lastShownAt: now,
+      })
+      .where(and(eq(links.id, linkId), eq(links.userId, userId)));
+  }
+
+  const openCounts = aggregateCounts(events, "open");
+  for (const [linkId, count] of openCounts) {
+    await db
+      .update(links)
+      .set({
+        openCount: sql`${links.openCount} + ${count}`,
+      })
+      .where(and(eq(links.id, linkId), eq(links.userId, userId)));
+  }
+
+  const dwellEvents = events.filter(
+    (event): event is EngagementPayload & { dwellTimeMs: number } =>
+      event.eventType === "dwell" &&
+      typeof event.dwellTimeMs === "number" &&
+      event.dwellTimeMs > 0
+  );
+
+  if (dwellEvents.length > 0) {
+    const dwellLinkIds = Array.from(new Set(dwellEvents.map((event) => event.linkId)));
+    const dwellLinks = await db
+      .select({ id: links.id, categories: links.categories })
       .from(links)
-      .where(and(eq(links.id, linkId), eq(links.userId, userId)))
-      .limit(1);
+      .where(and(eq(links.userId, userId), inArray(links.id, dwellLinkIds)));
 
-    if (link) {
-      // Compute engagement score from this interaction
-      const interactionScore = computeEngagementScore(
-        dwellTimeMs,
-        swipeVelocity,
-        eventType
-      );
+    const categoriesByLink = new Map(
+      dwellLinks.map((link) => [link.id, link.categories || []] as const)
+    );
 
-      // Running average of engagement score
-      const totalInteractions = link.shownCount || 1;
-      const newEngagement =
-        (link.engagementScore * (totalInteractions - 1) + interactionScore) /
-        totalInteractions;
+    const preferenceContributions = new Map<string, TimePreferenceContribution>();
 
-      // Running average of dwell time
-      const newAvgDwell = Math.round(
-        (link.avgDwellMs * (totalInteractions - 1) + dwellTimeMs) /
-        totalInteractions
-      );
+    for (const event of dwellEvents) {
+      const interactionScore = computeEngagementScore(event.dwellTimeMs, event.swipeVelocity ?? null);
 
       await db
         .update(links)
         .set({
-          engagementScore: newEngagement,
-          avgDwellMs: newAvgDwell,
+          engagementScore: sql`CASE
+            WHEN ${links.shownCount} <= 1 THEN ${interactionScore}
+            ELSE ((${links.engagementScore} * (${links.shownCount} - 1) + ${interactionScore}) / ${links.shownCount})
+          END`,
+          avgDwellMs: sql`ROUND(CASE
+            WHEN ${links.shownCount} <= 1 THEN ${event.dwellTimeMs}
+            ELSE ((${links.avgDwellMs} * (${links.shownCount} - 1) + ${event.dwellTimeMs}) / ${links.shownCount})
+          END)::int`,
         })
-        .where(and(eq(links.id, linkId), eq(links.userId, userId)));
+        .where(and(eq(links.id, event.linkId), eq(links.userId, userId)));
 
-      // 3. Update time-of-day preferences (Level 4)
-      if (link.categories && link.categories.length > 0) {
-        const dayType = dayOfWeek === 0 || dayOfWeek === 6 ? "weekend" : "weekday";
-
-        for (const category of link.categories) {
-          await updateTimePreference(
-            userId,
-            hourOfDay,
-            dayType,
-            category,
-            interactionScore
-          );
-        }
+      const categories = categoriesByLink.get(event.linkId) || [];
+      for (const category of categories) {
+        const current = preferenceContributions.get(category) || { sum: 0, count: 0 };
+        current.sum += interactionScore;
+        current.count += 1;
+        preferenceContributions.set(category, current);
       }
     }
+
+    await updateTimePreferences(userId, hourOfDay, dayType, preferenceContributions);
   }
 
-  // Track opens separately
-  if (eventType === "open") {
-    const [link] = await db
-      .select()
-      .from(links)
-      .where(and(eq(links.id, linkId), eq(links.userId, userId)))
-      .limit(1);
+  return NextResponse.json({ ok: true, processed: events.length });
+}
 
-    if (link) {
-      await db
-        .update(links)
-        .set({ openCount: link.openCount + 1 })
-        .where(and(eq(links.id, linkId), eq(links.userId, userId)));
-    }
+function isEngagementPayload(value: unknown): value is EngagementPayload {
+  if (!value || typeof value !== "object") return false;
+  const event = value as Partial<EngagementPayload>;
+
+  return (
+    typeof event.linkId === "string" &&
+    !!event.linkId &&
+    (event.eventType === "impression" ||
+      event.eventType === "dwell" ||
+      event.eventType === "open")
+  );
+}
+
+function aggregateCounts(events: EngagementPayload[], eventType: EventType): Map<string, number> {
+  const counts = new Map<string, number>();
+
+  for (const event of events) {
+    if (event.eventType !== eventType) continue;
+    counts.set(event.linkId, (counts.get(event.linkId) || 0) + 1);
   }
 
-  return NextResponse.json({ ok: true });
+  return counts;
 }
 
 /**
  * Compute an engagement score from behavioral signals.
  *
  * Score range: 0.0 (zero interest) to 1.0 (deep engagement)
- *
- * The logic:
- * - Dwell time is the strongest signal. More time = more interest.
- *   But it's logarithmic — the difference between 1s and 5s is huge,
- *   the difference between 30s and 35s is small.
- * - Swipe velocity is a negative signal. Fast swipe = "not interested".
- *   Slow deliberate swipe = "I'm done but it was good".
- * - Opens are a strong positive signal (handled separately).
  */
 function computeEngagementScore(
   dwellTimeMs: number,
-  swipeVelocity: number | null,
-  eventType: string
+  swipeVelocity: number | null
 ): number {
   let score = 0;
 
-  // Dwell time component (0 to 0.7)
-  // Log scale: 1s=0.1, 3s=0.25, 10s=0.4, 30s=0.55, 60s=0.65, 120s=0.7
+  // Dwell time component (0 to 0.7) on log scale.
   const dwellSeconds = dwellTimeMs / 1000;
   const dwellScore = Math.min(0.7, Math.log(1 + dwellSeconds) / Math.log(1 + 120) * 0.7);
   score += dwellScore;
 
   // Swipe velocity penalty (0 to -0.2)
-  // Fast swipe (>2 px/ms) = strong negative signal
-  // Slow swipe (<0.5 px/ms) = neutral/positive
   if (swipeVelocity !== null) {
     const velocityPenalty = Math.min(0.2, Math.max(0, (swipeVelocity - 0.5) * 0.1));
     score -= velocityPenalty;
-  }
-
-  // Open bonus
-  if (eventType === "open") {
-    score += 0.3;
   }
 
   return Math.max(0, Math.min(1, score));
 }
 
 /**
- * Update time-of-day preferences using an incremental running average.
- *
- * This learns patterns like: "User engages heavily with AI content at 10am on weekdays"
+ * Update time-of-day preferences with batched contribution deltas.
  */
-async function updateTimePreference(
+async function updateTimePreferences(
   userId: string,
   hour: number,
   dayType: string,
-  category: string,
-  engagementScore: number
+  contributions: Map<string, TimePreferenceContribution>
 ) {
+  if (contributions.size === 0) return;
+
+  const categories = Array.from(contributions.keys());
   const existing = await db
     .select()
     .from(timePreferences)
@@ -179,35 +201,39 @@ async function updateTimePreference(
       and(
         eq(timePreferences.hourSlot, hour),
         eq(timePreferences.dayType, dayType),
-        eq(timePreferences.category, category),
-        eq(timePreferences.userId, userId)
+        eq(timePreferences.userId, userId),
+        inArray(timePreferences.category, categories)
       )
-    )
-    .limit(1);
+    );
 
-  if (existing.length > 0) {
-    const pref = existing[0];
-    const newCount = pref.sampleCount + 1;
-    const newAvg =
-      (pref.avgEngagement * pref.sampleCount + engagementScore) / newCount;
+  const existingByCategory = new Map(existing.map((pref) => [pref.category, pref] as const));
 
-    await db
-      .update(timePreferences)
-      .set({
-        avgEngagement: newAvg,
-        sampleCount: newCount,
-        updatedAt: new Date(),
-      })
-      .where(eq(timePreferences.id, pref.id));
-  } else {
-    await db.insert(timePreferences).values({
-      id: nanoid(12),
-      userId,
-      hourSlot: hour,
-      dayType,
-      category,
-      avgEngagement: engagementScore,
-      sampleCount: 1,
-    });
+  for (const [category, contribution] of contributions) {
+    const pref = existingByCategory.get(category);
+
+    if (pref) {
+      const newCount = pref.sampleCount + contribution.count;
+      const newAvg =
+        (pref.avgEngagement * pref.sampleCount + contribution.sum) / newCount;
+
+      await db
+        .update(timePreferences)
+        .set({
+          avgEngagement: newAvg,
+          sampleCount: newCount,
+          updatedAt: new Date(),
+        })
+        .where(eq(timePreferences.id, pref.id));
+    } else {
+      await db.insert(timePreferences).values({
+        id: nanoid(12),
+        userId,
+        hourSlot: hour,
+        dayType,
+        category,
+        avgEngagement: contribution.sum / contribution.count,
+        sampleCount: contribution.count,
+      });
+    }
   }
 }

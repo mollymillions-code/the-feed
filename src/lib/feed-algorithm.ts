@@ -59,6 +59,12 @@ export interface SessionContext {
   cardsShown: number;
 }
 
+interface SessionSignalMaps {
+  engagedCategorySet: Set<string>;
+  engagedCategoryCounts: Map<string, number>;
+  skippedCategorySet: Set<string>;
+}
+
 // ─────────────── Level 1: Engagement Prediction ───────────────
 
 /**
@@ -135,7 +141,8 @@ function semanticMatchScore(
  */
 function sessionContextScore(
   link: FeedLink,
-  session: SessionContext
+  session: SessionContext,
+  signalMaps: SessionSignalMaps
 ): number {
   if (session.cardsShown === 0) return 0.5;
 
@@ -145,25 +152,28 @@ function sessionContextScore(
   let score = 0.5;
 
   // Momentum: engaged categories get a boost
-  const engagedOverlap = linkCats.filter((c) =>
-    session.engagedCategories.includes(c)
-  ).length;
+  const engagedOverlap = linkCats.reduce(
+    (count, category) => count + (signalMaps.engagedCategorySet.has(category) ? 1 : 0),
+    0
+  );
   if (engagedOverlap > 0) {
     score += Math.min(0.3, engagedOverlap * 0.15);
   }
 
   // Fatigue: too many of same category
-  const catCount = session.engagedCategories.filter((c) =>
-    linkCats.includes(c)
-  ).length;
+  const catCount = linkCats.reduce(
+    (total, category) => total + (signalMaps.engagedCategoryCounts.get(category) || 0),
+    0
+  );
   if (catCount > 3) {
     score -= Math.min(0.3, (catCount - 3) * 0.1);
   }
 
   // Skip signal: strong negative
-  const skipOverlap = linkCats.filter((c) =>
-    session.skippedCategories.includes(c)
-  ).length;
+  const skipOverlap = linkCats.reduce(
+    (count, category) => count + (signalMaps.skippedCategorySet.has(category) ? 1 : 0),
+    0
+  );
   if (skipOverlap > 0) {
     score -= Math.min(0.3, skipOverlap * 0.15);
   }
@@ -183,9 +193,9 @@ function sessionContextScore(
  */
 function timePreferenceScore(
   link: FeedLink,
-  preferences: TimePreference[]
+  preferenceScores: Map<string, number>
 ): number {
-  if (preferences.length === 0) return 0.5;
+  if (preferenceScores.size === 0) return 0.5;
 
   const linkCats = link.categories || [];
   if (linkCats.length === 0) return 0.5;
@@ -193,9 +203,9 @@ function timePreferenceScore(
   let bestScore = 0;
 
   for (const cat of linkCats) {
-    const pref = preferences.find((p) => p.category === cat);
-    if (pref && pref.sampleCount >= 3) {
-      bestScore = Math.max(bestScore, pref.avgEngagement);
+    const prefScore = preferenceScores.get(cat);
+    if (prefScore !== undefined) {
+      bestScore = Math.max(bestScore, prefScore);
     }
   }
 
@@ -250,11 +260,14 @@ export function scoreFeedLinks(
   },
   timePrefs: TimePreference[] = []
 ): FeedLink[] {
+  const signalMaps = buildSessionSignalMaps(session);
+  const preferenceScores = buildTimePreferenceMap(timePrefs);
+
   const scored: ScoredLink[] = links.map((link) => {
     const engagement = engagementPredictScore(link);
     const semantic = semanticMatchScore(link, session.engagedEmbeddings);
-    const sessionCtx = sessionContextScore(link, session);
-    const timePref = timePreferenceScore(link, timePrefs);
+    const sessionCtx = sessionContextScore(link, session, signalMaps);
+    const timePref = timePreferenceScore(link, preferenceScores);
     const freshness = freshnessScore(link);
     const exploration = explorationScore();
 
@@ -323,4 +336,32 @@ function daysSince(dateStr: string | null): number {
   return Math.floor(
     (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24)
   );
+}
+
+function buildSessionSignalMaps(session: SessionContext): SessionSignalMaps {
+  const engagedCategoryCounts = new Map<string, number>();
+
+  for (const category of session.engagedCategories) {
+    engagedCategoryCounts.set(category, (engagedCategoryCounts.get(category) || 0) + 1);
+  }
+
+  return {
+    engagedCategorySet: new Set(session.engagedCategories),
+    engagedCategoryCounts,
+    skippedCategorySet: new Set(session.skippedCategories),
+  };
+}
+
+function buildTimePreferenceMap(timePrefs: TimePreference[]): Map<string, number> {
+  const preferenceScores = new Map<string, number>();
+
+  for (const pref of timePrefs) {
+    if (pref.sampleCount < 3) continue;
+    const current = preferenceScores.get(pref.category) || 0;
+    if (pref.avgEngagement > current) {
+      preferenceScores.set(pref.category, pref.avgEngagement);
+    }
+  }
+
+  return preferenceScores;
 }

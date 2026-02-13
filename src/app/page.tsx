@@ -7,6 +7,9 @@ import CategoryTabs from "@/components/CategoryTabs";
 import BottomNav from "@/components/BottomNav";
 import EmptyState from "@/components/EmptyState";
 
+const FEED_PAGE_SIZE = 20;
+const MAX_SESSION_SIGNAL_ITEMS = 200;
+
 export default function FeedPage() {
   const [links, setLinks] = useState<FeedLink[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -16,26 +19,58 @@ export default function FeedPage() {
   // Session state — tracks behavioral signals for the recommendation engine
   const sessionId = useMemo(() => `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, []);
   const engagedIdsRef = useRef<string[]>([]);
+  const engagedIdSetRef = useRef<Set<string>>(new Set());
   const engagedCatsRef = useRef<string[]>([]);
   const skippedCatsRef = useRef<string[]>([]);
   const cardsShownRef = useRef(0);
+  const linksRef = useRef<FeedLink[]>([]);
+  const linkByIdRef = useRef<Map<string, FeedLink>>(new Map());
 
   // Engagement event queue — batch send to avoid hammering the API
   const eventQueueRef = useRef<EngagementEvent[]>([]);
   const flushTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const appendInFlightRef = useRef(false);
+  const hasMoreRef = useRef(true);
+  const requestSeqRef = useRef(0);
+
+  useEffect(() => {
+    linksRef.current = links;
+    linkByIdRef.current = new Map(links.map((link) => [link.id, link]));
+  }, [links]);
+
+  const addEngagedId = useCallback((id: string) => {
+    if (engagedIdSetRef.current.has(id)) return;
+
+    engagedIdSetRef.current.add(id);
+    engagedIdsRef.current.push(id);
+
+    if (engagedIdsRef.current.length > MAX_SESSION_SIGNAL_ITEMS) {
+      const removed = engagedIdsRef.current.shift();
+      if (removed) {
+        engagedIdSetRef.current.delete(removed);
+      }
+    }
+  }, []);
+
+  const pushCategorySignals = useCallback((target: string[], categories: string[]) => {
+    if (categories.length === 0) return;
+
+    target.push(...categories);
+    if (target.length > MAX_SESSION_SIGNAL_ITEMS) {
+      target.splice(0, target.length - MAX_SESSION_SIGNAL_ITEMS);
+    }
+  }, []);
 
   const flushEngagements = useCallback(async () => {
     const events = eventQueueRef.current.splice(0);
     if (events.length === 0) return;
 
-    // Fire-and-forget — don't block the UI
-    for (const event of events) {
-      fetch("/api/engagement", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(event),
-      }).catch(() => {});
-    }
+    fetch("/api/engagement", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ events }),
+      keepalive: true,
+    }).catch(() => {});
   }, []);
 
   // Flush events every 2 seconds
@@ -47,14 +82,21 @@ export default function FeedPage() {
     };
   }, [flushEngagements]);
 
-  // Track whether we've done the initial load vs appending more cards
-  const hasLoadedRef = useRef(false);
-
   const fetchFeed = useCallback(async (category: string, append = false) => {
+    if (append) {
+      if (appendInFlightRef.current || !hasMoreRef.current) return;
+      appendInFlightRef.current = true;
+    } else {
+      hasMoreRef.current = true;
+    }
+
+    const requestId = ++requestSeqRef.current;
+
     try {
       const params = new URLSearchParams({
         category,
-        limit: "20",
+        limit: String(FEED_PAGE_SIZE),
+        excludeIds: append ? linksRef.current.map((link) => link.id).join(",") : "",
         engagedIds: engagedIdsRef.current.join(","),
         engagedCats: engagedCatsRef.current.join(","),
         skippedCats: skippedCatsRef.current.join(","),
@@ -62,24 +104,35 @@ export default function FeedPage() {
       });
 
       const res = await fetch(`/api/feed?${params}`);
+      if (!res.ok) {
+        throw new Error(`Feed request failed with status ${res.status}`);
+      }
+
       const data = await res.json();
+      if (requestId !== requestSeqRef.current) return;
+      const incoming = (data.links || []) as FeedLink[];
 
       if (append) {
-        // Append new cards, deduplicating by ID — preserves existing deck order
         setLinks((prev) => {
-          const existingIds = new Set(prev.map((l) => l.id));
-          const newLinks = data.links.filter((l: FeedLink) => !existingIds.has(l.id));
-          return [...prev, ...newLinks];
+          const existingIds = new Set(prev.map((link) => link.id));
+          const next = incoming.filter((link) => !existingIds.has(link.id));
+          return [...prev, ...next];
         });
       } else {
-        setLinks(data.links);
+        setLinks(incoming);
       }
-      setCategories(data.categories);
+
+      setCategories(data.categories || []);
+      hasMoreRef.current = incoming.length >= FEED_PAGE_SIZE;
     } catch (err) {
       console.error("Failed to fetch feed:", err);
     } finally {
-      setLoading(false);
-      hasLoadedRef.current = true;
+      if (requestId === requestSeqRef.current) {
+        setLoading(false);
+      }
+      if (append) {
+        appendInFlightRef.current = false;
+      }
     }
   }, []);
 
@@ -88,9 +141,12 @@ export default function FeedPage() {
   }, [activeCategory, fetchFeed]);
 
   function handleCategorySelect(category: string) {
+    if (category === activeCategory) return;
+    requestSeqRef.current++;
+    appendInFlightRef.current = false;
+    hasMoreRef.current = true;
     setActiveCategory(category);
     setLoading(true);
-    hasLoadedRef.current = false;
   }
 
   function handleDelete(id: string) {
@@ -98,21 +154,22 @@ export default function FeedPage() {
   }
 
   function handleLike(id: string) {
+    const currentlyLiked = !!linkByIdRef.current.get(id)?.likedAt;
+
     // Optimistic toggle
     setLinks((prev) =>
       prev.map((l) =>
         l.id === id
-          ? { ...l, likedAt: l.likedAt ? null : new Date().toISOString() }
+          ? { ...l, likedAt: currentlyLiked ? null : new Date().toISOString() }
           : l
       )
     );
 
     // Persist to server
-    const link = links.find((l) => l.id === id);
     fetch(`/api/links/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ liked: !link?.likedAt }),
+      body: JSON.stringify({ liked: !currentlyLiked }),
     }).catch(() => {});
   }
 
@@ -125,42 +182,30 @@ export default function FeedPage() {
       // Update session state for real-time feed adaptation
       if (event.eventType === "impression") {
         cardsShownRef.current++;
-
-        // Also increment shown count on the server
-        fetch(`/api/links/${event.linkId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ incrementShown: true }),
-        }).catch(() => {});
       }
+
+      const linkCats = linkByIdRef.current.get(event.linkId)?.categories || [];
 
       if (event.eventType === "dwell") {
         const dwellMs = event.dwellTimeMs || 0;
-        const link = links.find((l) => l.id === event.linkId);
-        const linkCats = link?.categories || [];
 
         if (dwellMs >= DWELL_ENGAGED_MS) {
           // Engaged — spent meaningful time on this card
-          if (!engagedIdsRef.current.includes(event.linkId)) {
-            engagedIdsRef.current.push(event.linkId);
-          }
-          linkCats.forEach((c) => engagedCatsRef.current.push(c));
+          addEngagedId(event.linkId);
+          pushCategorySignals(engagedCatsRef.current, linkCats);
         } else if (dwellMs < FAST_SWIPE_MS) {
           // Skipped — swiped away quickly
-          linkCats.forEach((c) => skippedCatsRef.current.push(c));
+          pushCategorySignals(skippedCatsRef.current, linkCats);
         }
       }
 
       if (event.eventType === "open") {
         // Opening content is a strong engagement signal
-        if (!engagedIdsRef.current.includes(event.linkId)) {
-          engagedIdsRef.current.push(event.linkId);
-        }
-        const link = links.find((l) => l.id === event.linkId);
-        link?.categories?.forEach((c) => engagedCatsRef.current.push(c));
+        addEngagedId(event.linkId);
+        pushCategorySignals(engagedCatsRef.current, linkCats);
       }
     },
-    [links]
+    [addEngagedId, pushCategorySignals]
   );
 
   function handleNearEnd() {

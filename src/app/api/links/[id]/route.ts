@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { links } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 
 // PATCH /api/links/[id] — update a link (archive, update shown count, etc.)
@@ -22,8 +22,11 @@ export async function PATCH(
   }
 
   if (body.shownCount !== undefined) {
-    updates.shownCount = body.shownCount;
-    updates.lastShownAt = new Date();
+    const shownCount = Number.parseInt(String(body.shownCount), 10);
+    if (!Number.isNaN(shownCount)) {
+      updates.shownCount = Math.max(0, shownCount);
+      updates.lastShownAt = new Date();
+    }
   }
 
   if (body.liked === true) {
@@ -33,17 +36,7 @@ export async function PATCH(
   }
 
   if (body.incrementShown) {
-    const existing = await db
-      .select()
-      .from(links)
-      .where(and(eq(links.id, id), eq(links.userId, userId)))
-      .limit(1);
-
-    if (existing.length === 0) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-
-    updates.shownCount = existing[0].shownCount + 1;
+    updates.shownCount = sql`${links.shownCount} + 1`;
     updates.lastShownAt = new Date();
   }
 

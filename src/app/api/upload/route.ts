@@ -4,6 +4,8 @@ import { links } from "@/lib/db/schema";
 import { categorizeContent, generateEmbedding } from "@/lib/ai";
 import { nanoid } from "nanoid";
 import { getSession } from "@/lib/auth";
+import { unfurlUrl } from "@/lib/unfurl";
+import { and, eq, inArray } from "drizzle-orm";
 
 /**
  * POST /api/upload — Add image or text content (not a URL)
@@ -87,27 +89,34 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "urls array required" }, { status: 400 });
   }
 
-  // Cap at 50 links per batch
-  const batch = urls.slice(0, 50);
-  const results: { url: string; status: "added" | "duplicate" | "error" }[] = [];
+  // Normalize, de-duplicate, and cap at 50 links per batch
+  const batch = Array.from(
+    new Set(
+      urls
+        .map((url) => String(url).trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 50);
 
-  // Import dynamically to avoid circular deps
-  const { unfurlUrl } = await import("@/lib/unfurl");
+  if (batch.length === 0) {
+    return NextResponse.json({ error: "No valid URLs provided" }, { status: 400 });
+  }
+
+  const results: { url: string; status: "added" | "duplicate" | "error" }[] = [];
+  const existingRows = await db
+    .select({ url: links.url })
+    .from(links)
+    .where(and(eq(links.userId, userId), inArray(links.url, batch)));
+  const existingUrlSet = new Set(
+    existingRows.map((row) => row.url).filter((url): url is string => !!url)
+  );
 
   for (const url of batch) {
     try {
       // Validate
       new URL(url);
 
-      // Check duplicate (per user)
-      const { eq, and } = await import("drizzle-orm");
-      const existing = await db
-        .select({ id: links.id })
-        .from(links)
-        .where(and(eq(links.url, url), eq(links.userId, userId)))
-        .limit(1);
-
-      if (existing.length > 0) {
+      if (existingUrlSet.has(url)) {
         results.push({ url, status: "duplicate" });
         continue;
       }
@@ -143,6 +152,7 @@ export async function PUT(request: NextRequest) {
         embedding,
       });
 
+      existingUrlSet.add(url);
       results.push({ url, status: "added" });
     } catch {
       results.push({ url, status: "error" });
