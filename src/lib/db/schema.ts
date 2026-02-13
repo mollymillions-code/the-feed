@@ -81,6 +81,7 @@ export const engagements = pgTable(
     dayOfWeek: integer("day_of_week"),        // 0=Sun, 6=Sat
     // Session tracking
     sessionId: text("session_id"),
+    feedRequestId: text("feed_request_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
@@ -97,6 +98,11 @@ export const engagements = pgTable(
     sessionCreatedIdx: index("engagements_session_created_idx").on(
       table.userId,
       table.sessionId,
+      table.createdAt
+    ),
+    feedRequestCreatedIdx: index("engagements_feed_request_created_idx").on(
+      table.userId,
+      table.feedRequestId,
       table.createdAt
     ),
   })
@@ -132,6 +138,52 @@ export const timePreferences = pgTable(
       table.userId,
       table.hourSlot,
       table.dayType
+    ),
+  })
+);
+
+/**
+ * Ranking snapshots used for model training/evaluation.
+ * One row per candidate link per feed request.
+ */
+export const rankingEvents = pgTable(
+  "ranking_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").default("").notNull(),
+    sessionId: text("session_id"),
+    feedRequestId: text("feed_request_id").notNull(),
+    linkId: text("link_id").notNull(),
+    algorithmVersion: text("algorithm_version").notNull(),
+    rerankerVersion: text("reranker_version"),
+    activeCategory: text("active_category"),
+    cardsShown: integer("cards_shown").default(0).notNull(),
+    candidateRank: integer("candidate_rank").notNull(),
+    servedRank: integer("served_rank"),
+    baseScore: real("base_score").notNull(),
+    rerankScore: real("rerank_score"),
+    finalScore: real("final_score").notNull(),
+    features: jsonb("features").$type<Record<string, number>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userCreatedIdx: index("ranking_events_user_created_idx").on(
+      table.userId,
+      table.createdAt
+    ),
+    requestRankIdx: index("ranking_events_request_rank_idx").on(
+      table.userId,
+      table.feedRequestId,
+      table.candidateRank
+    ),
+    userLinkCreatedIdx: index("ranking_events_user_link_created_idx").on(
+      table.userId,
+      table.linkId,
+      table.createdAt
+    ),
+    requestLinkUnique: uniqueIndex("ranking_events_request_link_uniq").on(
+      table.feedRequestId,
+      table.linkId
     ),
   })
 );

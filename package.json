@@ -11,7 +11,10 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:migrate:perf": "node scripts/migrate-performance-indexes.mjs"
+    "db:migrate:perf": "node scripts/migrate-performance-indexes.mjs",
+    "ml:export-dataset": "node scripts/export-training-dataset.mjs",
+    "ml:eval-ndcg": "node scripts/eval-ranking-ndcg.mjs",
+    "ml:train-xgboost": "python3 scripts/train-xgboost-reranker.py"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

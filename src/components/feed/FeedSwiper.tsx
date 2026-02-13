@@ -25,6 +25,7 @@ export interface EngagementEvent {
   swipeVelocity?: number;
   cardIndex?: number;
   sessionId: string;
+  feedRequestId?: string;
 }
 
 export default function FeedSwiper({

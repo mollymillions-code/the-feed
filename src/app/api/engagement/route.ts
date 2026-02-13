@@ -14,6 +14,7 @@ interface EngagementPayload {
   swipeVelocity?: number;
   cardIndex?: number;
   sessionId?: string;
+  feedRequestId?: string;
 }
 
 interface TimePreferenceContribution {
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
       hourOfDay,
       dayOfWeek,
       sessionId: event.sessionId || null,
+      feedRequestId: event.feedRequestId || null,
     }))
   );
 

@@ -43,9 +43,37 @@ async function migrate() {
   await sql`CREATE INDEX IF NOT EXISTS engagements_user_link_created_idx ON engagements (user_id, link_id, created_at)`;
   await sql`CREATE INDEX IF NOT EXISTS engagements_user_event_created_idx ON engagements (user_id, event_type, created_at)`;
   await sql`CREATE INDEX IF NOT EXISTS engagements_session_created_idx ON engagements (user_id, session_id, created_at)`;
+  await sql`ALTER TABLE engagements ADD COLUMN IF NOT EXISTS feed_request_id text`;
+  await sql`CREATE INDEX IF NOT EXISTS engagements_feed_request_created_idx ON engagements (user_id, feed_request_id, created_at)`;
 
   await sql`CREATE INDEX IF NOT EXISTS time_prefs_user_slot_lookup_idx ON time_preferences (user_id, hour_slot, day_type)`;
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS time_prefs_user_slot_category_uniq ON time_preferences (user_id, hour_slot, day_type, category)`;
+
+  console.log("Creating ranking event table...");
+  await sql`
+    CREATE TABLE IF NOT EXISTS ranking_events (
+      id text PRIMARY KEY,
+      user_id text NOT NULL DEFAULT '',
+      session_id text,
+      feed_request_id text NOT NULL,
+      link_id text NOT NULL,
+      algorithm_version text NOT NULL,
+      reranker_version text,
+      active_category text,
+      cards_shown integer NOT NULL DEFAULT 0,
+      candidate_rank integer NOT NULL,
+      served_rank integer,
+      base_score real NOT NULL,
+      rerank_score real,
+      final_score real NOT NULL,
+      features jsonb NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS ranking_events_user_created_idx ON ranking_events (user_id, created_at)`;
+  await sql`CREATE INDEX IF NOT EXISTS ranking_events_request_rank_idx ON ranking_events (user_id, feed_request_id, candidate_rank)`;
+  await sql`CREATE INDEX IF NOT EXISTS ranking_events_user_link_created_idx ON ranking_events (user_id, link_id, created_at)`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS ranking_events_request_link_uniq ON ranking_events (feed_request_id, link_id)`;
 
   console.log("Migration complete.");
 }

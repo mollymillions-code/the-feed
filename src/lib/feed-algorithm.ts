@@ -1,11 +1,7 @@
 import { FeedLink } from "@/types";
 import { cosineSimilarity } from "./ai";
 
-interface ScoredLink {
-  link: FeedLink;
-  score: number;
-  breakdown: ScoreBreakdown;
-}
+export const FEED_ALGORITHM_VERSION = "v4.2-contextual-bandit-phase2";
 
 export interface ScoreBreakdown {
   engagement: number;
@@ -30,6 +26,15 @@ export interface SessionContext {
   cardsShown: number;
 }
 
+export interface RankingCandidate {
+  link: FeedLink;
+  score: number;
+  baseScore: number;
+  rerankScore: number | null;
+  breakdown: ScoreBreakdown;
+  features: Record<string, number>;
+}
+
 interface SessionSignalMaps {
   engagedCategorySet: Set<string>;
   skippedCategorySet: Set<string>;
@@ -40,7 +45,6 @@ interface SessionSignalMaps {
 interface CategoryBanditStat {
   shown: number;
   engagementSum: number;
-  linkCount: number;
 }
 
 interface DatasetStats {
@@ -59,6 +63,21 @@ interface ScoringWeights {
   exploration: number;
 }
 
+interface SessionScoreContext {
+  score: number;
+  momentum: number;
+  skip: number;
+  fatigue: number;
+  sameLaneBoost: number;
+}
+
+interface ExplorationContext {
+  score: number;
+  uncertainty: number;
+  categoryNovelty: number;
+  sessionNovelty: number;
+}
+
 const BASE_WEIGHTS: ScoringWeights = {
   engagement: 0.30,
   semantic: 0.25,
@@ -70,6 +89,152 @@ const BASE_WEIGHTS: ScoringWeights = {
 
 const SESSION_SIGNAL_RECENCY_DECAY = 0.92;
 const UCB_EXPLORATION_COEFFICIENT = 0.28;
+
+interface ScoringOptions {
+  applyDiversity?: boolean;
+}
+
+export function scoreFeedCandidates(
+  links: FeedLink[],
+  session: SessionContext = {
+    engagedLinkIds: [],
+    engagedCategories: [],
+    skippedCategories: [],
+    engagedEmbeddings: [],
+    cardsShown: 0,
+  },
+  timePrefs: TimePreference[] = [],
+  options: ScoringOptions = {}
+): RankingCandidate[] {
+  if (links.length === 0) return [];
+
+  const stats = buildDatasetStats(links);
+  const signalMaps = buildSessionSignalMaps(session);
+  const preferenceScores = buildTimePreferenceMap(timePrefs);
+  const weights = deriveWeights({
+    hasSemantic: session.engagedEmbeddings.length > 0,
+    hasTimePrefs: preferenceScores.size > 0,
+    cardsShown: session.cardsShown,
+  });
+
+  const scored: RankingCandidate[] = links.map((link) => {
+    const engagement = engagementPredictScore(link, stats);
+    const semantic = semanticMatchScore(link, session.engagedEmbeddings);
+    const sessionCtx = sessionContextScore(link, session, signalMaps);
+    const timePref = timePreferenceScore(link, preferenceScores);
+    const freshness = freshnessScore(link);
+    const explorationCtx = explorationScore(link, stats, signalMaps);
+
+    const baseScore =
+      engagement * weights.engagement +
+      semantic * weights.semantic +
+      sessionCtx.score * weights.session +
+      timePref * weights.timePref +
+      freshness * weights.freshness +
+      explorationCtx.score * weights.exploration;
+
+    const shown = Math.max(0, link.shownCount);
+    const daysAdded = daysSince(link.addedAt);
+    const categories = link.categories || [];
+    const openRate = Math.min(1, link.openCount / Math.max(1, shown));
+    const typePrior =
+      stats.contentTypeMeans.get(link.contentType) ?? stats.globalEngagementMean;
+
+    const features: Record<string, number> = {
+      f_engagement: engagement,
+      f_semantic: semantic,
+      f_session: sessionCtx.score,
+      f_time_pref: timePref,
+      f_freshness: freshness,
+      f_exploration: explorationCtx.score,
+      f_shown_count_norm: clamp01(shown / 20),
+      f_open_rate: openRate,
+      f_days_since_added_norm: clamp01(daysAdded / 120),
+      f_is_liked: link.likedAt ? 1 : 0,
+      f_is_unseen: shown === 0 ? 1 : 0,
+      f_category_count_norm: clamp01(categories.length / 4),
+      f_has_embedding: link.embedding ? 1 : 0,
+      f_content_type_prior: clamp01(typePrior),
+      f_session_momentum: clamp01(sessionCtx.momentum / 5),
+      f_session_skip_pressure: clamp01(sessionCtx.skip / 5),
+      f_session_fatigue: clamp01(sessionCtx.fatigue / 4),
+      f_session_same_lane_boost: sessionCtx.sameLaneBoost,
+      f_ucb_uncertainty: clamp01(explorationCtx.uncertainty / 3),
+      f_category_novelty: clamp01(explorationCtx.categoryNovelty),
+      f_session_novelty: explorationCtx.sessionNovelty,
+    };
+
+    return {
+      link,
+      score: baseScore,
+      baseScore,
+      rerankScore: null,
+      breakdown: {
+        engagement,
+        semantic,
+        session: sessionCtx.score,
+        timePref,
+        freshness,
+        exploration: explorationCtx.score,
+      },
+      features,
+    };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  if (options.applyDiversity === false) {
+    return scored;
+  }
+
+  return applyDiversityPass(scored);
+}
+
+export function scoreFeedLinks(
+  links: FeedLink[],
+  session?: SessionContext,
+  timePrefs?: TimePreference[]
+): FeedLink[] {
+  return scoreFeedCandidates(links, session, timePrefs).map(
+    (candidate) => candidate.link
+  );
+}
+
+export function applyDiversityPass(
+  rankedCandidates: RankingCandidate[]
+): RankingCandidate[] {
+  const result: RankingCandidate[] = [];
+  const remaining = [...rankedCandidates];
+  const recentPrimaryCats: string[] = [];
+
+  while (remaining.length > 0) {
+    let picked = -1;
+
+    for (let i = 0; i < remaining.length; i++) {
+      const primaryCat = getPrimaryCategory(remaining[i].link);
+      const isTripleRun =
+        !!primaryCat &&
+        recentPrimaryCats.length >= 2 &&
+        recentPrimaryCats[recentPrimaryCats.length - 1] === primaryCat &&
+        recentPrimaryCats[recentPrimaryCats.length - 2] === primaryCat;
+
+      if (!isTripleRun || i > 7) {
+        picked = i;
+        break;
+      }
+    }
+
+    if (picked === -1) picked = 0;
+
+    const item = remaining.splice(picked, 1)[0];
+    result.push(item);
+
+    const primaryCat = getPrimaryCategory(item.link);
+    if (primaryCat) recentPrimaryCats.push(primaryCat);
+  }
+
+  return result;
+}
 
 function engagementPredictScore(link: FeedLink, stats: DatasetStats): number {
   const shown = Math.max(0, link.shownCount);
@@ -126,11 +291,27 @@ function sessionContextScore(
   link: FeedLink,
   session: SessionContext,
   signalMaps: SessionSignalMaps
-): number {
-  if (session.cardsShown === 0) return 0.5;
+): SessionScoreContext {
+  if (session.cardsShown === 0) {
+    return {
+      score: 0.5,
+      momentum: 0,
+      skip: 0,
+      fatigue: 0,
+      sameLaneBoost: 0,
+    };
+  }
 
   const linkCats = link.categories || [];
-  if (linkCats.length === 0) return 0.5;
+  if (linkCats.length === 0) {
+    return {
+      score: 0.5,
+      momentum: 0,
+      skip: 0,
+      fatigue: 0,
+      sameLaneBoost: 0,
+    };
+  }
 
   let momentum = 0;
   let skip = 0;
@@ -157,7 +338,13 @@ function sessionContextScore(
     Math.min(0.2, fatigue * 0.04) +
     sameLaneBoost;
 
-  return clamp01(score);
+  return {
+    score: clamp01(score),
+    momentum,
+    skip,
+    fatigue,
+    sameLaneBoost,
+  };
 }
 
 function timePreferenceScore(
@@ -197,7 +384,7 @@ function explorationScore(
   link: FeedLink,
   stats: DatasetStats,
   signalMaps: SessionSignalMaps
-): number {
+): ExplorationContext {
   const shown = Math.max(0, link.shownCount);
   const linkCats = link.categories || [];
   const categoryPrior = getCategoryPrior(linkCats, stats);
@@ -223,102 +410,19 @@ function explorationScore(
     );
   const sessionNovelty = unseenInSession ? 0.08 : 0;
 
-  return clamp01(
+  const score = clamp01(
     meanEstimate +
       UCB_EXPLORATION_COEFFICIENT * uncertainty +
       0.14 * categoryNovelty +
       sessionNovelty
   );
-}
 
-export function scoreFeedLinks(
-  links: FeedLink[],
-  session: SessionContext = {
-    engagedLinkIds: [],
-    engagedCategories: [],
-    skippedCategories: [],
-    engagedEmbeddings: [],
-    cardsShown: 0,
-  },
-  timePrefs: TimePreference[] = []
-): FeedLink[] {
-  if (links.length === 0) return [];
-
-  const stats = buildDatasetStats(links);
-  const signalMaps = buildSessionSignalMaps(session);
-  const preferenceScores = buildTimePreferenceMap(timePrefs);
-  const weights = deriveWeights({
-    hasSemantic: session.engagedEmbeddings.length > 0,
-    hasTimePrefs: preferenceScores.size > 0,
-    cardsShown: session.cardsShown,
-  });
-
-  const scored: ScoredLink[] = links.map((link) => {
-    const engagement = engagementPredictScore(link, stats);
-    const semantic = semanticMatchScore(link, session.engagedEmbeddings);
-    const sessionCtx = sessionContextScore(link, session, signalMaps);
-    const timePref = timePreferenceScore(link, preferenceScores);
-    const freshness = freshnessScore(link);
-    const exploration = explorationScore(link, stats, signalMaps);
-
-    const score =
-      engagement * weights.engagement +
-      semantic * weights.semantic +
-      sessionCtx * weights.session +
-      timePref * weights.timePref +
-      freshness * weights.freshness +
-      exploration * weights.exploration;
-
-    return {
-      link,
-      score,
-      breakdown: {
-        engagement,
-        semantic,
-        session: sessionCtx,
-        timePref,
-        freshness,
-        exploration,
-      },
-    };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-  return applyDiversityPass(scored);
-}
-
-function applyDiversityPass(scored: ScoredLink[]): FeedLink[] {
-  const result: FeedLink[] = [];
-  const remaining = [...scored];
-  const recentPrimaryCats: string[] = [];
-
-  while (remaining.length > 0) {
-    let picked = -1;
-
-    for (let i = 0; i < remaining.length; i++) {
-      const primaryCat = getPrimaryCategory(remaining[i].link);
-      const isTripleRun =
-        !!primaryCat &&
-        recentPrimaryCats.length >= 2 &&
-        recentPrimaryCats[recentPrimaryCats.length - 1] === primaryCat &&
-        recentPrimaryCats[recentPrimaryCats.length - 2] === primaryCat;
-
-      if (!isTripleRun || i > 7) {
-        picked = i;
-        break;
-      }
-    }
-
-    if (picked === -1) picked = 0;
-
-    const item = remaining.splice(picked, 1)[0];
-    result.push(item.link);
-
-    const primaryCat = getPrimaryCategory(item.link);
-    if (primaryCat) recentPrimaryCats.push(primaryCat);
-  }
-
-  return result;
+  return {
+    score,
+    uncertainty,
+    categoryNovelty,
+    sessionNovelty,
+  };
 }
 
 function buildDatasetStats(links: FeedLink[]): DatasetStats {
@@ -353,11 +457,9 @@ function buildDatasetStats(links: FeedLink[]): DatasetStats {
       const current = categoryBandits.get(category) || {
         shown: 0,
         engagementSum: 0,
-        linkCount: 0,
       };
       current.shown += shown;
       current.engagementSum += weightedEngagement;
-      current.linkCount += 1;
       categoryBandits.set(category, current);
     }
   }

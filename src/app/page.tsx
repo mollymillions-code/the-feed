@@ -9,6 +9,8 @@ import EmptyState from "@/components/EmptyState";
 
 const FEED_PAGE_SIZE = 20;
 const MAX_SESSION_SIGNAL_ITEMS = 200;
+const MAX_SIGNAL_QUERY_ITEMS = 80;
+const MAX_CATEGORY_SIGNAL_QUERY_ITEMS = 120;
 
 export default function FeedPage() {
   const [links, setLinks] = useState<FeedLink[]>([]);
@@ -25,6 +27,7 @@ export default function FeedPage() {
   const cardsShownRef = useRef(0);
   const linksRef = useRef<FeedLink[]>([]);
   const linkByIdRef = useRef<Map<string, FeedLink>>(new Map());
+  const feedRequestByLinkIdRef = useRef<Map<string, string>>(new Map());
 
   // Engagement event queue — batch send to avoid hammering the API
   const eventQueueRef = useRef<EngagementEvent[]>([]);
@@ -97,9 +100,11 @@ export default function FeedPage() {
         category,
         limit: String(FEED_PAGE_SIZE),
         excludeIds: append ? linksRef.current.map((link) => link.id).join(",") : "",
-        engagedIds: engagedIdsRef.current.join(","),
-        engagedCats: engagedCatsRef.current.join(","),
-        skippedCats: skippedCatsRef.current.join(","),
+        includeCategories: append ? "0" : "1",
+        sessionId,
+        engagedIds: tailCsv(engagedIdsRef.current, MAX_SIGNAL_QUERY_ITEMS),
+        engagedCats: tailCsv(engagedCatsRef.current, MAX_CATEGORY_SIGNAL_QUERY_ITEMS),
+        skippedCats: tailCsv(skippedCatsRef.current, MAX_CATEGORY_SIGNAL_QUERY_ITEMS),
         cardsShown: String(cardsShownRef.current),
       });
 
@@ -111,6 +116,7 @@ export default function FeedPage() {
       const data = await res.json();
       if (requestId !== requestSeqRef.current) return;
       const incoming = (data.links || []) as FeedLink[];
+      const feedRequestId = typeof data.feedRequestId === "string" ? data.feedRequestId : null;
 
       if (append) {
         setLinks((prev) => {
@@ -122,7 +128,17 @@ export default function FeedPage() {
         setLinks(incoming);
       }
 
-      setCategories(data.categories || []);
+      if (feedRequestId) {
+        const nextMap = new Map(feedRequestByLinkIdRef.current);
+        for (const link of incoming) {
+          nextMap.set(link.id, feedRequestId);
+        }
+        feedRequestByLinkIdRef.current = nextMap;
+      }
+
+      if (!append) {
+        setCategories(Array.isArray(data.categories) ? data.categories : []);
+      }
       hasMoreRef.current = incoming.length >= FEED_PAGE_SIZE;
     } catch (err) {
       console.error("Failed to fetch feed:", err);
@@ -134,7 +150,7 @@ export default function FeedPage() {
         appendInFlightRef.current = false;
       }
     }
-  }, []);
+  }, [sessionId]);
 
   useEffect(() => {
     fetchFeed(activeCategory);
@@ -145,12 +161,14 @@ export default function FeedPage() {
     requestSeqRef.current++;
     appendInFlightRef.current = false;
     hasMoreRef.current = true;
+    feedRequestByLinkIdRef.current = new Map();
     setActiveCategory(category);
     setLoading(true);
   }
 
   function handleDelete(id: string) {
     setLinks((prev) => prev.filter((l) => l.id !== id));
+    feedRequestByLinkIdRef.current.delete(id);
   }
 
   function handleLike(id: string) {
@@ -176,22 +194,28 @@ export default function FeedPage() {
   // The core behavioral signal handler — every interaction flows through here
   const handleEngagement = useCallback(
     (event: EngagementEvent) => {
+      const enrichedEvent: EngagementEvent = {
+        ...event,
+        feedRequestId:
+          event.feedRequestId || feedRequestByLinkIdRef.current.get(event.linkId),
+      };
+
       // Queue for batch sending
-      eventQueueRef.current.push(event);
+      eventQueueRef.current.push(enrichedEvent);
 
       // Update session state for real-time feed adaptation
-      if (event.eventType === "impression") {
+      if (enrichedEvent.eventType === "impression") {
         cardsShownRef.current++;
       }
 
-      const linkCats = linkByIdRef.current.get(event.linkId)?.categories || [];
+      const linkCats = linkByIdRef.current.get(enrichedEvent.linkId)?.categories || [];
 
-      if (event.eventType === "dwell") {
-        const dwellMs = event.dwellTimeMs || 0;
+      if (enrichedEvent.eventType === "dwell") {
+        const dwellMs = enrichedEvent.dwellTimeMs || 0;
 
         if (dwellMs >= DWELL_ENGAGED_MS) {
           // Engaged — spent meaningful time on this card
-          addEngagedId(event.linkId);
+          addEngagedId(enrichedEvent.linkId);
           pushCategorySignals(engagedCatsRef.current, linkCats);
         } else if (dwellMs < FAST_SWIPE_MS) {
           // Skipped — swiped away quickly
@@ -199,9 +223,9 @@ export default function FeedPage() {
         }
       }
 
-      if (event.eventType === "open") {
+      if (enrichedEvent.eventType === "open") {
         // Opening content is a strong engagement signal
-        addEngagedId(event.linkId);
+        addEngagedId(enrichedEvent.linkId);
         pushCategorySignals(engagedCatsRef.current, linkCats);
       }
     },
@@ -255,4 +279,9 @@ export default function FeedPage() {
       <BottomNav />
     </>
   );
+}
+
+function tailCsv(values: string[], limit: number): string {
+  if (values.length <= limit) return values.join(",");
+  return values.slice(values.length - limit).join(",");
 }
