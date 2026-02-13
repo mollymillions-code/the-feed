@@ -7,6 +7,15 @@ import { getSession } from "@/lib/auth";
 import { unfurlUrl } from "@/lib/unfurl";
 import { and, eq, inArray } from "drizzle-orm";
 
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * POST /api/upload — Add image or text content (not a URL)
  *
@@ -113,8 +122,10 @@ export async function PUT(request: NextRequest) {
 
   for (const url of batch) {
     try {
-      // Validate
-      new URL(url);
+      if (!isHttpUrl(url)) {
+        results.push({ url, status: "error" });
+        continue;
+      }
 
       if (existingUrlSet.has(url)) {
         results.push({ url, status: "duplicate" });

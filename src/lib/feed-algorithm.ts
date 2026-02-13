@@ -1,30 +1,6 @@
 import { FeedLink } from "@/types";
 import { cosineSimilarity } from "./ai";
 
-/**
- * THE FEED — Recommendation Algorithm v2
- *
- * A 4-level scoring system that learns from your behavior to surface
- * the right content at the right time.
- *
- * ┌─────────────────────────────────────────────────────────────────┐
- * │                                                                 │
- * │  Final Score = engagement_predict × 0.30   ← Level 1           │
- * │              + semantic_match    × 0.25   ← Level 2           │
- * │              + session_context   × 0.20   ← Level 3           │
- * │              + time_preference   × 0.10   ← Level 4           │
- * │              + freshness_decay   × 0.10   ← Base              │
- * │              + exploration       × 0.05   ← Explore vs Exploit│
- * │                                                                 │
- * └─────────────────────────────────────────────────────────────────┘
- *
- * Each level can operate independently. If there's no data for a level
- * (e.g., no embeddings yet, no time preferences learned), it falls back
- * to a neutral 0.5 score — it doesn't break, it just contributes less.
- */
-
-// ─────────────── Types ───────────────
-
 interface ScoredLink {
   link: FeedLink;
   score: number;
@@ -47,98 +23,105 @@ export interface TimePreference {
 }
 
 export interface SessionContext {
-  /** Link IDs the user engaged with (dwelled >3s or opened) this session */
   engagedLinkIds: string[];
-  /** Categories the user engaged with this session */
   engagedCategories: string[];
-  /** Categories the user swiped past quickly this session */
   skippedCategories: string[];
-  /** Embeddings of content the user engaged with this session */
   engagedEmbeddings: number[][];
-  /** How many cards shown so far this session */
   cardsShown: number;
 }
 
 interface SessionSignalMaps {
   engagedCategorySet: Set<string>;
-  engagedCategoryCounts: Map<string, number>;
   skippedCategorySet: Set<string>;
+  engagedCategoryWeights: Map<string, number>;
+  skippedCategoryWeights: Map<string, number>;
 }
 
-// ─────────────── Level 1: Engagement Prediction ───────────────
+interface CategoryBanditStat {
+  shown: number;
+  engagementSum: number;
+  linkCount: number;
+}
 
-/**
- * Predicts how likely you are to engage with this content based on
- * your past behavior with THIS specific link and similar links.
- *
- * Signals:
- * - Historical engagement score (learned from dwell time + swipe velocity)
- * - Open count (did you actually tap into the content?)
- * - Never-seen bonus (unseen = high potential)
- * - Show-count decay (shown 10 times but low engagement = stop showing)
- */
-function engagementPredictScore(link: FeedLink): number {
-  // Never-seen items get a strong exploration bonus
-  if (link.shownCount === 0) return 0.8;
+interface DatasetStats {
+  totalShown: number;
+  globalEngagementMean: number;
+  contentTypeMeans: Map<FeedLink["contentType"], number>;
+  categoryBandits: Map<string, CategoryBanditStat>;
+}
 
-  // Use learned engagement score if available
-  if (link.engagementScore > 0) {
-    const recencyDecay = link.lastShownAt
-      ? Math.exp(-daysSince(link.lastShownAt) / 30)
-      : 0.5;
+interface ScoringWeights {
+  engagement: number;
+  semantic: number;
+  session: number;
+  timePref: number;
+  freshness: number;
+  exploration: number;
+}
 
-    return link.engagementScore * 0.7 + recencyDecay * 0.3;
+const BASE_WEIGHTS: ScoringWeights = {
+  engagement: 0.30,
+  semantic: 0.25,
+  session: 0.20,
+  timePref: 0.10,
+  freshness: 0.10,
+  exploration: 0.05,
+};
+
+const SESSION_SIGNAL_RECENCY_DECAY = 0.92;
+const UCB_EXPLORATION_COEFFICIENT = 0.28;
+
+function engagementPredictScore(link: FeedLink, stats: DatasetStats): number {
+  const shown = Math.max(0, link.shownCount);
+  const typeMean =
+    stats.contentTypeMeans.get(link.contentType) ?? stats.globalEngagementMean;
+  const likedBoost = link.likedAt ? 0.08 : 0;
+
+  if (shown === 0) {
+    const coldStart = 0.58 + (typeMean - 0.5) * 0.2;
+    return clamp01(coldStart + likedBoost);
   }
 
-  // Shown but no engagement data — decay with each re-show
-  return Math.max(0.2, 0.6 - link.shownCount * 0.05);
+  const recencySignal = link.lastShownAt
+    ? Math.exp(-daysSince(link.lastShownAt) / 30)
+    : 0.55;
+  const openRate = Math.min(1, link.openCount / Math.max(1, shown));
+  const openSignal = openRate * 0.2;
+  const baseline =
+    link.engagementScore > 0
+      ? link.engagementScore * 0.72 + typeMean * 0.28
+      : typeMean * 0.9;
+  const overShownPenalty = Math.min(0.22, Math.max(0, shown - 10) * 0.015);
+
+  return clamp01(
+    baseline * 0.67 +
+      recencySignal * 0.23 +
+      openSignal +
+      likedBoost -
+      overShownPenalty
+  );
 }
 
-// ─────────────── Level 2: Semantic Similarity ───────────────
-
-/**
- * How semantically similar is this link to content you've recently
- * engaged with?
- *
- * A 3Blue1Brown video about neural networks and an Andrej Karpathy
- * blog post about backpropagation will have similar embeddings —
- * even though they're different formats on different platforms.
- */
 function semanticMatchScore(
   link: FeedLink,
   engagedEmbeddings: number[][]
 ): number {
   const linkEmbedding = link.embedding;
-
   if (!linkEmbedding || engagedEmbeddings.length === 0) return 0.5;
 
   let maxSim = 0;
   let avgSim = 0;
 
   for (const engaged of engagedEmbeddings) {
-    const sim = cosineSimilarity(linkEmbedding, engaged);
+    const sim = clamp01((cosineSimilarity(linkEmbedding, engaged) + 1) / 2);
     maxSim = Math.max(maxSim, sim);
     avgSim += sim;
   }
 
   avgSim /= engagedEmbeddings.length;
-
-  // Blend max (strong single-item match) and avg (broad interest match)
-  const blended = maxSim * 0.6 + avgSim * 0.4;
-
-  return Math.max(0, Math.min(1, blended));
+  return clamp01(maxSim * 0.65 + avgSim * 0.35);
 }
 
-// ─────────────── Level 3: Session Context ───────────────
-
-/**
- * Real-time adaptation based on what's happening in THIS session.
- *
- * Three sub-signals:
- * 1. Category momentum: engaging with AI → boost more AI (you're in the zone)
- * 2. Category fatigue: 4+ of same → penalize (need variety)
- * 3. Skip signal: fast-swiped past 2+ → strong penalty (not in the mood)
- */
 function sessionContextScore(
   link: FeedLink,
   session: SessionContext,
@@ -149,48 +132,34 @@ function sessionContextScore(
   const linkCats = link.categories || [];
   if (linkCats.length === 0) return 0.5;
 
-  let score = 0.5;
+  let momentum = 0;
+  let skip = 0;
+  let fatigue = 0;
 
-  // Momentum: engaged categories get a boost
-  const engagedOverlap = linkCats.reduce(
-    (count, category) => count + (signalMaps.engagedCategorySet.has(category) ? 1 : 0),
-    0
-  );
-  if (engagedOverlap > 0) {
-    score += Math.min(0.3, engagedOverlap * 0.15);
+  for (const category of linkCats) {
+    const engagedWeight = signalMaps.engagedCategoryWeights.get(category) || 0;
+    const skippedWeight = signalMaps.skippedCategoryWeights.get(category) || 0;
+
+    momentum += engagedWeight;
+    skip += skippedWeight;
+    fatigue += Math.max(0, engagedWeight - 2);
   }
 
-  // Fatigue: too many of same category
-  const catCount = linkCats.reduce(
-    (total, category) => total + (signalMaps.engagedCategoryCounts.get(category) || 0),
-    0
-  );
-  if (catCount > 3) {
-    score -= Math.min(0.3, (catCount - 3) * 0.1);
-  }
+  const sameLaneBoost = linkCats.some((cat) =>
+    signalMaps.engagedCategorySet.has(cat)
+  )
+    ? 0.04
+    : 0;
+  const score =
+    0.5 +
+    Math.min(0.32, momentum * 0.07) -
+    Math.min(0.34, skip * 0.1) -
+    Math.min(0.2, fatigue * 0.04) +
+    sameLaneBoost;
 
-  // Skip signal: strong negative
-  const skipOverlap = linkCats.reduce(
-    (count, category) => count + (signalMaps.skippedCategorySet.has(category) ? 1 : 0),
-    0
-  );
-  if (skipOverlap > 0) {
-    score -= Math.min(0.3, skipOverlap * 0.15);
-  }
-
-  return Math.max(0, Math.min(1, score));
+  return clamp01(score);
 }
 
-// ─────────────── Level 4: Time-of-Day Preferences ───────────────
-
-/**
- * Boosts content matching your learned time-of-day patterns.
- *
- * After enough data points, this learns:
- * - 8am weekdays: Tech, AI (deep work mode)
- * - 12pm weekdays: Fun, Creativity (lunch break)
- * - 9pm weekends: Wisdom, Design (relaxed browsing)
- */
 function timePreferenceScore(
   link: FeedLink,
   preferenceScores: Map<string, number>
@@ -201,53 +170,66 @@ function timePreferenceScore(
   if (linkCats.length === 0) return 0.5;
 
   let bestScore = 0;
-
   for (const cat of linkCats) {
-    const prefScore = preferenceScores.get(cat);
-    if (prefScore !== undefined) {
-      bestScore = Math.max(bestScore, prefScore);
-    }
+    const score = preferenceScores.get(cat);
+    if (score !== undefined) bestScore = Math.max(bestScore, score);
   }
 
-  return bestScore === 0 ? 0.5 : bestScore;
+  return bestScore === 0 ? 0.5 : clamp01(bestScore);
 }
 
-// ─────────────── Base: Freshness & Decay ───────────────
-
-/**
- * The "forgotten gems" curve:
- * - Just added: see it soon
- * - 2-8 weeks old: BOOST (you probably forgot about this)
- * - Old: lower priority but not zero
- */
 function freshnessScore(link: FeedLink): number {
   const days = daysSince(link.addedAt);
 
   let ageScore: number;
-  if (days < 1) ageScore = 0.7;
-  else if (days < 14) ageScore = 0.5;
-  else if (days <= 56) ageScore = 0.9;   // 2-8 weeks: forgotten gems
-  else if (days <= 120) ageScore = 0.4;
+  if (days < 1) ageScore = 0.72;
+  else if (days < 14) ageScore = 0.56;
+  else if (days <= 56) ageScore = 0.88;
+  else if (days <= 120) ageScore = 0.42;
   else ageScore = 0.25;
 
-  // Penalize over-shown content
-  const showPenalty = Math.min(0.3, link.shownCount * 0.03);
-
-  return Math.max(0, ageScore - showPenalty);
+  const showPenalty = Math.min(0.35, Math.max(0, link.shownCount) * 0.028);
+  const likedBoost = link.likedAt ? 0.08 : 0;
+  return clamp01(ageScore - showPenalty + likedBoost);
 }
 
-// ─────────────── Exploration Factor ───────────────
+function explorationScore(
+  link: FeedLink,
+  stats: DatasetStats,
+  signalMaps: SessionSignalMaps
+): number {
+  const shown = Math.max(0, link.shownCount);
+  const linkCats = link.categories || [];
+  const categoryPrior = getCategoryPrior(linkCats, stats);
+  const meanEstimate =
+    shown > 0 ? clamp01(link.engagementScore) : clamp01(categoryPrior);
+  const uncertainty = Math.sqrt(Math.log(stats.totalShown + 2) / (shown + 1));
 
-/**
- * Explore-exploit tradeoff. Occasionally boosts low-scored items
- * to discover new interests and prevent filter bubbles.
- */
-function explorationScore(): number {
-  if (Math.random() < 0.1) return 0.9;  // 10% chance of strong explore
-  return Math.random() * 0.3;
+  let categoryNovelty = 0;
+  for (const category of linkCats) {
+    const categoryShown = stats.categoryBandits.get(category)?.shown || 0;
+    categoryNovelty = Math.max(
+      categoryNovelty,
+      1 / Math.sqrt(categoryShown + 1)
+    );
+  }
+
+  const unseenInSession =
+    linkCats.length > 0 &&
+    linkCats.every(
+      (cat) =>
+        !signalMaps.engagedCategorySet.has(cat) &&
+        !signalMaps.skippedCategorySet.has(cat)
+    );
+  const sessionNovelty = unseenInSession ? 0.08 : 0;
+
+  return clamp01(
+    meanEstimate +
+      UCB_EXPLORATION_COEFFICIENT * uncertainty +
+      0.14 * categoryNovelty +
+      sessionNovelty
+  );
 }
-
-// ─────────────── Main Scoring Function ───────────────
 
 export function scoreFeedLinks(
   links: FeedLink[],
@@ -260,58 +242,68 @@ export function scoreFeedLinks(
   },
   timePrefs: TimePreference[] = []
 ): FeedLink[] {
+  if (links.length === 0) return [];
+
+  const stats = buildDatasetStats(links);
   const signalMaps = buildSessionSignalMaps(session);
   const preferenceScores = buildTimePreferenceMap(timePrefs);
+  const weights = deriveWeights({
+    hasSemantic: session.engagedEmbeddings.length > 0,
+    hasTimePrefs: preferenceScores.size > 0,
+    cardsShown: session.cardsShown,
+  });
 
   const scored: ScoredLink[] = links.map((link) => {
-    const engagement = engagementPredictScore(link);
+    const engagement = engagementPredictScore(link, stats);
     const semantic = semanticMatchScore(link, session.engagedEmbeddings);
     const sessionCtx = sessionContextScore(link, session, signalMaps);
     const timePref = timePreferenceScore(link, preferenceScores);
     const freshness = freshnessScore(link);
-    const exploration = explorationScore();
+    const exploration = explorationScore(link, stats, signalMaps);
 
     const score =
-      engagement * 0.30 +
-      semantic * 0.25 +
-      sessionCtx * 0.20 +
-      timePref * 0.10 +
-      freshness * 0.10 +
-      exploration * 0.05;
+      engagement * weights.engagement +
+      semantic * weights.semantic +
+      sessionCtx * weights.session +
+      timePref * weights.timePref +
+      freshness * weights.freshness +
+      exploration * weights.exploration;
 
     return {
       link,
       score,
-      breakdown: { engagement, semantic, session: sessionCtx, timePref, freshness, exploration },
+      breakdown: {
+        engagement,
+        semantic,
+        session: sessionCtx,
+        timePref,
+        freshness,
+        exploration,
+      },
     };
   });
 
   scored.sort((a, b) => b.score - a.score);
-
   return applyDiversityPass(scored);
 }
 
-/**
- * Post-sort diversity: prevent 3+ of the same category in a row.
- */
 function applyDiversityPass(scored: ScoredLink[]): FeedLink[] {
   const result: FeedLink[] = [];
   const remaining = [...scored];
-  const recentCats: string[] = [];
+  const recentPrimaryCats: string[] = [];
 
   while (remaining.length > 0) {
     let picked = -1;
 
     for (let i = 0; i < remaining.length; i++) {
-      const cats = remaining[i].link.categories || [];
-      const would3Run = cats.some(
-        (c) =>
-          recentCats.length >= 2 &&
-          recentCats[recentCats.length - 1] === c &&
-          recentCats[recentCats.length - 2] === c
-      );
+      const primaryCat = getPrimaryCategory(remaining[i].link);
+      const isTripleRun =
+        !!primaryCat &&
+        recentPrimaryCats.length >= 2 &&
+        recentPrimaryCats[recentPrimaryCats.length - 1] === primaryCat &&
+        recentPrimaryCats[recentPrimaryCats.length - 2] === primaryCat;
 
-      if (!would3Run || i > 5) {
+      if (!isTripleRun || i > 7) {
         picked = i;
         break;
       }
@@ -322,34 +314,93 @@ function applyDiversityPass(scored: ScoredLink[]): FeedLink[] {
     const item = remaining.splice(picked, 1)[0];
     result.push(item.link);
 
-    const cats = item.link.categories || [];
-    if (cats.length > 0) recentCats.push(cats[0]);
+    const primaryCat = getPrimaryCategory(item.link);
+    if (primaryCat) recentPrimaryCats.push(primaryCat);
   }
 
   return result;
 }
 
-// ─────────────── Helpers ───────────────
+function buildDatasetStats(links: FeedLink[]): DatasetStats {
+  let totalShown = 0;
+  let globalEngagementSum = 0;
 
-function daysSince(dateStr: string | null): number {
-  if (!dateStr) return 999;
-  return Math.floor(
-    (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24)
-  );
-}
+  const contentTypeTotals = new Map<
+    FeedLink["contentType"],
+    { weightedSum: number; shown: number }
+  >();
+  const categoryBandits = new Map<string, CategoryBanditStat>();
 
-function buildSessionSignalMaps(session: SessionContext): SessionSignalMaps {
-  const engagedCategoryCounts = new Map<string, number>();
+  for (const link of links) {
+    const shown = Math.max(0, link.shownCount);
+    const weightedEngagement = clamp01(link.engagementScore) * shown;
 
-  for (const category of session.engagedCategories) {
-    engagedCategoryCounts.set(category, (engagedCategoryCounts.get(category) || 0) + 1);
+    if (shown > 0) {
+      totalShown += shown;
+      globalEngagementSum += weightedEngagement;
+
+      const typeAgg = contentTypeTotals.get(link.contentType) || {
+        weightedSum: 0,
+        shown: 0,
+      };
+      typeAgg.weightedSum += weightedEngagement;
+      typeAgg.shown += shown;
+      contentTypeTotals.set(link.contentType, typeAgg);
+    }
+
+    const categories = link.categories || [];
+    for (const category of categories) {
+      const current = categoryBandits.get(category) || {
+        shown: 0,
+        engagementSum: 0,
+        linkCount: 0,
+      };
+      current.shown += shown;
+      current.engagementSum += weightedEngagement;
+      current.linkCount += 1;
+      categoryBandits.set(category, current);
+    }
+  }
+
+  const globalEngagementMean =
+    totalShown > 0 ? globalEngagementSum / totalShown : 0.5;
+  const contentTypeMeans = new Map<FeedLink["contentType"], number>();
+
+  for (const [type, agg] of contentTypeTotals) {
+    contentTypeMeans.set(
+      type,
+      agg.shown > 0 ? agg.weightedSum / agg.shown : globalEngagementMean
+    );
   }
 
   return {
-    engagedCategorySet: new Set(session.engagedCategories),
-    engagedCategoryCounts,
-    skippedCategorySet: new Set(session.skippedCategories),
+    totalShown,
+    globalEngagementMean,
+    contentTypeMeans,
+    categoryBandits,
   };
+}
+
+function buildSessionSignalMaps(session: SessionContext): SessionSignalMaps {
+  return {
+    engagedCategorySet: new Set(session.engagedCategories),
+    skippedCategorySet: new Set(session.skippedCategories),
+    engagedCategoryWeights: buildWeightedCategoryMap(session.engagedCategories),
+    skippedCategoryWeights: buildWeightedCategoryMap(session.skippedCategories),
+  };
+}
+
+function buildWeightedCategoryMap(categories: string[]): Map<string, number> {
+  const weighted = new Map<string, number>();
+
+  for (let i = 0; i < categories.length; i++) {
+    const category = categories[i];
+    const distanceFromTail = categories.length - 1 - i;
+    const weight = Math.pow(SESSION_SIGNAL_RECENCY_DECAY, distanceFromTail);
+    weighted.set(category, (weighted.get(category) || 0) + weight);
+  }
+
+  return weighted;
 }
 
 function buildTimePreferenceMap(timePrefs: TimePreference[]): Map<string, number> {
@@ -364,4 +415,89 @@ function buildTimePreferenceMap(timePrefs: TimePreference[]): Map<string, number
   }
 
   return preferenceScores;
+}
+
+function deriveWeights(options: {
+  hasSemantic: boolean;
+  hasTimePrefs: boolean;
+  cardsShown: number;
+}): ScoringWeights {
+  const weights: ScoringWeights = { ...BASE_WEIGHTS };
+
+  if (!options.hasSemantic) {
+    weights.engagement += 0.11;
+    weights.session += 0.08;
+    weights.exploration += 0.06;
+    weights.semantic = 0;
+  }
+
+  if (!options.hasTimePrefs) {
+    weights.engagement += 0.05;
+    weights.freshness += 0.05;
+    weights.timePref = 0;
+  }
+
+  if (options.cardsShown === 0) {
+    weights.freshness += weights.session * 0.6;
+    weights.exploration += weights.session * 0.4;
+    weights.session = 0;
+  } else if (options.cardsShown > 24) {
+    const shift = weights.exploration * 0.5;
+    weights.exploration -= shift;
+    weights.engagement += shift * 0.6;
+    weights.session += shift * 0.4;
+  }
+
+  return normalizeWeights(weights);
+}
+
+function normalizeWeights(weights: ScoringWeights): ScoringWeights {
+  const sum =
+    weights.engagement +
+    weights.semantic +
+    weights.session +
+    weights.timePref +
+    weights.freshness +
+    weights.exploration;
+
+  if (sum <= 0) return { ...BASE_WEIGHTS };
+
+  return {
+    engagement: weights.engagement / sum,
+    semantic: weights.semantic / sum,
+    session: weights.session / sum,
+    timePref: weights.timePref / sum,
+    freshness: weights.freshness / sum,
+    exploration: weights.exploration / sum,
+  };
+}
+
+function getCategoryPrior(categories: string[], stats: DatasetStats): number {
+  if (categories.length === 0) return stats.globalEngagementMean;
+
+  let best = stats.globalEngagementMean;
+  for (const category of categories) {
+    const stat = stats.categoryBandits.get(category);
+    if (!stat || stat.shown <= 0) continue;
+    best = Math.max(best, stat.engagementSum / stat.shown);
+  }
+
+  return clamp01(best);
+}
+
+function getPrimaryCategory(link: FeedLink): string | null {
+  const categories = link.categories || [];
+  if (categories.length > 0) return categories[0];
+  return null;
+}
+
+function daysSince(dateStr: string | null): number {
+  if (!dateStr) return 999;
+  return Math.floor(
+    (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24)
+  );
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
 }

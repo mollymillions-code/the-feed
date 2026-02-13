@@ -7,6 +7,15 @@ import { nanoid } from "nanoid";
 import { desc, eq, and, count, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 // GET /api/links — list all links (with optional status filter)
 // ?stats=true returns counts + categories without fetching all rows
 export async function GET(request: NextRequest) {
@@ -56,10 +65,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "URL is required" }, { status: 400 });
   }
 
-  // Validate URL
-  try {
-    new URL(url);
-  } catch {
+  if (!isHttpUrl(url)) {
     return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
   }
 
