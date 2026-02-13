@@ -127,27 +127,63 @@ function ImageMode({ onAdded }: { onAdded: () => void }) {
   const [result, setResult] = useState<FeedLink | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  function loadImageFile(file: File) {
     if (!file.type.startsWith("image/")) {
       setError("Please select an image file");
       return;
     }
-
-    // 10MB limit
     if (file.size > 10 * 1024 * 1024) {
       setError("Image must be under 10MB");
       return;
     }
-
     setError(null);
     const reader = new FileReader();
     reader.onload = () => {
       setPreview(reader.result as string);
     };
     reader.readAsDataURL(file);
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    loadImageFile(file);
+  }
+
+  // Listen for paste events (Ctrl+V / Cmd+V)
+  useEffect(() => {
+    function handlePaste(e: ClipboardEvent) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) loadImageFile(file);
+          return;
+        }
+      }
+    }
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handlePasteButton() {
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const imageType = item.types.find((t) => t.startsWith("image/"));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          loadImageFile(new File([blob], "pasted-image", { type: imageType }));
+          return;
+        }
+      }
+      setError("No image found in clipboard");
+    } catch {
+      setError("Clipboard access denied — try Ctrl+V instead");
+    }
   }
 
   async function handleSubmit() {
@@ -217,6 +253,20 @@ function ImageMode({ onAdded }: { onAdded: () => void }) {
           </>
         )}
       </label>
+
+      {/* Paste from clipboard */}
+      {!preview && (
+        <button
+          onClick={handlePasteButton}
+          className="w-full flex items-center justify-center gap-2 card-glass rounded-2.5xl px-5 py-3.5 text-[13px] text-feed-muted tracking-wide hover:text-feed-text transition-colors active:scale-[0.99]"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+          </svg>
+          Paste from clipboard
+        </button>
+      )}
 
       {/* Optional title */}
       {preview && (
