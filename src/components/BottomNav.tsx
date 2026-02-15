@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const tabs = [
   { href: "/", label: "Feed", icon: "home" },
   { href: "/add", label: "Add", icon: "plus" },
+  { href: "/history", label: "History", icon: "clock" },
   { href: "/settings", label: "Settings", icon: "settings" },
 ] as const;
 
@@ -25,6 +26,15 @@ function TabIcon({ icon }: { icon: string }) {
         <circle cx="12" cy="12" r="10" />
         <line x1="12" y1="8" x2="12" y2="16" />
         <line x1="8" y1="12" x2="16" y2="12" />
+      </svg>
+    );
+  }
+
+  if (icon === "clock") {
+    return (
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
       </svg>
     );
   }
@@ -49,7 +59,7 @@ export default function BottomNav() {
             <Link
               key={tab.href}
               href={tab.href}
-              className="relative flex flex-col items-center gap-1 py-2 px-6"
+              className="relative flex flex-col items-center gap-1 py-2 px-4"
             >
               <div className={`transition-all duration-200 ${active ? "text-feed-text" : "text-feed-dim"}`}>
                 <TabIcon icon={tab.icon} />

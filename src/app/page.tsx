@@ -12,11 +12,14 @@ const MAX_SESSION_SIGNAL_ITEMS = 200;
 const MAX_SIGNAL_QUERY_ITEMS = 80;
 const MAX_CATEGORY_SIGNAL_QUERY_ITEMS = 120;
 
+type FeedMode = "foryou" | "timeline";
+
 export default function FeedPage() {
   const [links, setLinks] = useState<FeedLink[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [activeCategory, setActiveCategory] = useState("All");
   const [loading, setLoading] = useState(true);
+  const [feedMode, setFeedMode] = useState<FeedMode>("foryou");
 
   // Session state — tracks behavioral signals for the recommendation engine
   const sessionId = useMemo(() => `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, []);
@@ -35,6 +38,7 @@ export default function FeedPage() {
   const appendInFlightRef = useRef(false);
   const hasMoreRef = useRef(true);
   const requestSeqRef = useRef(0);
+  const timelineCursorRef = useRef<string | null>(null);
 
   useEffect(() => {
     linksRef.current = links;
@@ -152,9 +156,69 @@ export default function FeedPage() {
     }
   }, [sessionId]);
 
+  const fetchTimeline = useCallback(async (category: string, append = false) => {
+    if (append) {
+      if (appendInFlightRef.current || !hasMoreRef.current) return;
+      appendInFlightRef.current = true;
+    } else {
+      hasMoreRef.current = true;
+      timelineCursorRef.current = null;
+    }
+
+    const requestId = ++requestSeqRef.current;
+
+    try {
+      const params = new URLSearchParams({
+        mode: "timeline",
+        category,
+        limit: String(FEED_PAGE_SIZE),
+        includeCategories: append ? "0" : "1",
+      });
+      if (append && timelineCursorRef.current) {
+        params.set("cursor", timelineCursorRef.current);
+      }
+
+      const res = await fetch(`/api/links?${params}`);
+      if (!res.ok) throw new Error(`Timeline request failed`);
+
+      const data = await res.json();
+      if (requestId !== requestSeqRef.current) return;
+
+      const incoming = (data.links || []) as FeedLink[];
+
+      if (append) {
+        setLinks((prev) => {
+          const existingIds = new Set(prev.map((l) => l.id));
+          return [...prev, ...incoming.filter((l) => !existingIds.has(l.id))];
+        });
+      } else {
+        setLinks(incoming);
+      }
+
+      if (!append) {
+        setCategories(Array.isArray(data.categories) ? data.categories : []);
+      }
+
+      hasMoreRef.current = data.hasMore === true;
+      timelineCursorRef.current = data.nextCursor || null;
+    } catch (err) {
+      console.error("Failed to fetch timeline:", err);
+    } finally {
+      if (requestId === requestSeqRef.current) setLoading(false);
+      if (append) appendInFlightRef.current = false;
+    }
+  }, []);
+
+  const feedModeRef = useRef<FeedMode>("foryou");
+  feedModeRef.current = feedMode;
+
   useEffect(() => {
-    fetchFeed(activeCategory);
-  }, [activeCategory, fetchFeed]);
+    if (feedModeRef.current === "timeline") {
+      fetchTimeline(activeCategory);
+    } else {
+      fetchFeed(activeCategory);
+    }
+  }, [activeCategory, feedMode, fetchFeed, fetchTimeline]);
 
   function handleCategorySelect(category: string) {
     if (category === activeCategory) return;
@@ -162,7 +226,19 @@ export default function FeedPage() {
     appendInFlightRef.current = false;
     hasMoreRef.current = true;
     feedRequestByLinkIdRef.current = new Map();
+    timelineCursorRef.current = null;
     setActiveCategory(category);
+    setLoading(true);
+  }
+
+  function handleFeedModeChange(mode: FeedMode) {
+    if (mode === feedMode) return;
+    requestSeqRef.current++;
+    appendInFlightRef.current = false;
+    hasMoreRef.current = true;
+    feedRequestByLinkIdRef.current = new Map();
+    timelineCursorRef.current = null;
+    setFeedMode(mode);
     setLoading(true);
   }
 
@@ -233,12 +309,39 @@ export default function FeedPage() {
   );
 
   function handleNearEnd() {
-    // Append new cards — preserves existing deck so back-swiping works
-    fetchFeed(activeCategory, true);
+    if (feedMode === "timeline") {
+      fetchTimeline(activeCategory, true);
+    } else {
+      fetchFeed(activeCategory, true);
+    }
   }
 
   return (
     <>
+      {/* Feed mode toggle */}
+      <div className="flex gap-1 mx-4 mt-3 mb-1 bg-white/[0.03] rounded-2xl p-1">
+        <button
+          onClick={() => handleFeedModeChange("foryou")}
+          className={`flex-1 py-2 rounded-xl text-[13px] font-semibold tracking-wide transition-all active:scale-[0.96] ${
+            feedMode === "foryou"
+              ? "bg-white/[0.08] text-feed-text shadow-sm"
+              : "text-feed-dim hover:text-feed-muted"
+          }`}
+        >
+          For You
+        </button>
+        <button
+          onClick={() => handleFeedModeChange("timeline")}
+          className={`flex-1 py-2 rounded-xl text-[13px] font-semibold tracking-wide transition-all active:scale-[0.96] ${
+            feedMode === "timeline"
+              ? "bg-white/[0.08] text-feed-text shadow-sm"
+              : "text-feed-dim hover:text-feed-muted"
+          }`}
+        >
+          Timeline
+        </button>
+      </div>
+
       <CategoryTabs
         categories={categories}
         activeCategory={activeCategory}

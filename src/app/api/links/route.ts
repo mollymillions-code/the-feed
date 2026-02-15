@@ -4,8 +4,9 @@ import { links } from "@/lib/db/schema";
 import { unfurlUrl } from "@/lib/unfurl";
 import { categorizeContent, generateEmbedding } from "@/lib/ai";
 import { nanoid } from "nanoid";
-import { desc, eq, and, count, sql } from "drizzle-orm";
+import { desc, eq, and, count, sql, lt, arrayContains } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
+import { dbLinkToFeedLink } from "@/lib/db/mappers";
 
 function isHttpUrl(value: string): boolean {
   try {
@@ -38,6 +39,49 @@ export async function GET(request: NextRequest) {
       total: activeCount.count + archivedCount.count,
       categories: Array.from(categorySet).sort(),
     });
+  }
+
+  // Timeline mode — deterministic chronological feed with cursor pagination
+  const mode = request.nextUrl.searchParams.get("mode");
+  if (mode === "timeline") {
+    const category = request.nextUrl.searchParams.get("category") || "All";
+    const limit = Math.min(parseInt(request.nextUrl.searchParams.get("limit") || "20") || 20, 50);
+    const cursor = request.nextUrl.searchParams.get("cursor"); // ISO timestamp
+    const includeCategories = request.nextUrl.searchParams.get("includeCategories") !== "0";
+
+    const conditions = [eq(links.status, "active"), eq(links.userId, userId)];
+    if (category !== "All") {
+      conditions.push(arrayContains(links.categories, [category]));
+    }
+    if (cursor) {
+      conditions.push(lt(links.addedAt, new Date(cursor)));
+    }
+
+    const rows = await db
+      .select()
+      .from(links)
+      .where(and(...conditions))
+      .orderBy(desc(links.addedAt))
+      .limit(limit + 1);
+
+    const hasMore = rows.length > limit;
+    const resultRows = hasMore ? rows.slice(0, limit) : rows;
+    const feedLinks = resultRows.map(dbLinkToFeedLink);
+    const nextCursor = hasMore && resultRows.length > 0
+      ? resultRows[resultRows.length - 1].addedAt.toISOString()
+      : null;
+
+    let categories: string[] | undefined;
+    if (includeCategories) {
+      const catRows = await db.select({ categories: links.categories }).from(links).where(and(sql`${links.categories} is not null`, eq(links.userId, userId), eq(links.status, "active")));
+      const categorySet = new Set<string>();
+      catRows.forEach((row) => {
+        if (row.categories) row.categories.forEach((c) => categorySet.add(c));
+      });
+      categories = Array.from(categorySet).sort();
+    }
+
+    return NextResponse.json({ links: feedLinks, categories, hasMore, nextCursor });
   }
 
   const status = request.nextUrl.searchParams.get("status") || "active";

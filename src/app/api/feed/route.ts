@@ -10,7 +10,7 @@ import {
   TimePreference,
 } from "@/lib/feed-algorithm";
 import { FeedLink } from "@/types";
-import { decodeEntities } from "@/lib/utils";
+import { dbLinkToFeedLink } from "@/lib/db/mappers";
 import { getSession } from "@/lib/auth";
 import { nanoid } from "nanoid";
 import { maybeApplyXGBoostReranker } from "@/lib/reranker";
@@ -105,25 +105,10 @@ export async function GET(request: NextRequest) {
     cardsShown,
   };
 
-  // Map to FeedLink type (decode HTML entities as safety net)
+  // Map to FeedLink type, preserving embeddings for scoring
   const feedLinks: FeedLink[] = candidateLinks.map((link) => ({
-    ...link,
-    title: decodeEntities(link.title),
-    description: decodeEntities(link.description),
-    aiSummary: decodeEntities(link.aiSummary),
-    siteName: decodeEntities(link.siteName),
-    addedAt: link.addedAt.toISOString(),
-    archivedAt: link.archivedAt?.toISOString() || null,
-    lastShownAt: link.lastShownAt?.toISOString() || null,
-    categories: link.categories || [],
-    metadata: (link.metadata as Record<string, unknown>) || null,
-    status: link.status as "active" | "archived",
-    contentType: link.contentType as FeedLink["contentType"],
+    ...dbLinkToFeedLink(link),
     embedding: (link.embedding as number[]) || null,
-    engagementScore: link.engagementScore,
-    avgDwellMs: link.avgDwellMs,
-    openCount: link.openCount,
-    likedAt: link.likedAt?.toISOString() || null,
   }));
 
   // Score with phase II algorithm and optional reranker.
